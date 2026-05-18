@@ -60,6 +60,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation("androidx.compose.material:material-icons-extended")
 
     // 3. Llamas al compilador usando ksp en vez de implementation
     ksp(libs.room.compiler)

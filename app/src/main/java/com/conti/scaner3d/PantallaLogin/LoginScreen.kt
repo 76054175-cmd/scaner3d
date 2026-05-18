@@ -11,7 +11,10 @@ import com.conti.scaner3d.baseDatosLocal.UsuarioDao
 import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(usuarioDao: UsuarioDao) {
+fun LoginScreen(
+    usuarioDao: UsuarioDao,
+    onLoginSuccess: (String) -> Unit // <-- Recibe la función para cambiar de pantalla
+) {
     // Variables de estado para guardar lo que el usuario escribe
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -29,6 +32,7 @@ fun LoginScreen(usuarioDao: UsuarioDao) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Campo de texto para el Usuario
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
@@ -37,22 +41,27 @@ fun LoginScreen(usuarioDao: UsuarioDao) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Campo de texto para la Contraseña
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
             label = { Text("Contraseña") },
-            visualTransformation = PasswordVisualTransformation() // Oculta la contraseña
+            visualTransformation = PasswordVisualTransformation() // Oculta la contraseña con asteriscos
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Botón para Ingresar
         Button(onClick = {
-            // Cuando hacen clic, buscamos en la base de datos
+            // Buscamos en la base de datos en segundo plano
             coroutineScope.launch {
                 val userEncontrado = usuarioDao.login(username, password)
 
                 if (userEncontrado != null) {
                     mensaje = "¡Bienvenido ${userEncontrado.usuario}!"
+
+                    // Activamos el cambio de pantalla pasándole el nombre del usuario logueado
+                    onLoginSuccess(userEncontrado.usuario)
                 } else {
                     mensaje = "Usuario o contraseña incorrectos"
                 }
@@ -63,7 +72,7 @@ fun LoginScreen(usuarioDao: UsuarioDao) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Muestra el resultado del login
+        // Muestra los mensajes de error o de bienvenida en pantalla
         Text(text = mensaje, color = MaterialTheme.colorScheme.primary)
     }
 }
