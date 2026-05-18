@@ -20,6 +20,9 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var mensaje by remember { mutableStateOf("") }
 
+    // ¡NUEVO!: Variable de estado para controlar si se muestra la alerta flotante
+    var mostrarAlertaError by remember { mutableStateOf(false) }
+
     // Necesario para ejecutar funciones 'suspend' (base de datos) en Compose
     val coroutineScope = rememberCoroutineScope()
 
@@ -59,11 +62,11 @@ fun LoginScreen(
 
                 if (userEncontrado != null) {
                     mensaje = "¡Bienvenido ${userEncontrado.usuario}!"
-
                     // Activamos el cambio de pantalla pasándole el nombre del usuario logueado
                     onLoginSuccess(userEncontrado.usuario)
                 } else {
-                    mensaje = "Usuario o contraseña incorrectos"
+                    // ¡NUEVO!: En lugar de solo cambiar el texto de 'mensaje', activamos la alerta
+                    mostrarAlertaError = true
                 }
             }
         }) {
@@ -72,7 +75,39 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Muestra los mensajes de error o de bienvenida en pantalla
-        Text(text = mensaje, color = MaterialTheme.colorScheme.primary)
+        // Muestra los mensajes de bienvenida (si los hay)
+        if (mensaje.isNotEmpty()) {
+            Text(text = mensaje, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+
+    // ¡NUEVO!: Diseño y lógica de la Alerta Flotante
+    if (mostrarAlertaError) {
+        AlertDialog(
+            onDismissRequest = {
+                // Esto se ejecuta si el usuario toca fuera del cuadro flotante
+                // Puedes dejarlo vacío si quieres obligarlo a presionar "Aceptar"
+                mostrarAlertaError = false
+            },
+            title = {
+                Text(text = "Datos Incorrectos")
+            },
+            text = {
+                Text("El usuario o la contraseña ingresados son incorrectos. Por favor, verifica tus datos y vuelve a intentarlo.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Acciones al hacer clic en "Aceptar"
+                        mostrarAlertaError = false // 1. Ocultar la alerta
+                        username = ""              // 2. Limpiar campo de usuario
+                        password = ""              // 3. Limpiar campo de contraseña
+                        mensaje = ""               // 4. Limpiar cualquier texto de error residual
+                    }
+                ) {
+                    Text("Aceptar")
+                }
+            }
+        )
     }
 }

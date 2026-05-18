@@ -1,7 +1,6 @@
 package com.conti.scaner3d.PantallasOperacion
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -27,13 +26,23 @@ import com.conti.scaner3d.R
 fun PerfilScreen(
     onCerrarSesion: () -> Unit = {},
     onReturnHome: () -> Unit = {},
-    onNavigate: (String) -> Unit = {} // <-- ¡ESTA ES LA CORRECCIÓN!
+    onNavigate: (String) -> Unit = {},
+    isDarkMode: Boolean,
+    onThemeChange: Function<Unit>
 ) {
-    val selectedItem = 3 // Índice de Perfil
+    val selectedItem = 3
+
+    // Estado del Modo Oscuro
     var darkModeEnabled by remember { mutableStateOf(false) }
 
     val bottomNavItems = listOf("Inicio", "Escanear", "Historial", "Perfil")
     val bottomNavIcons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.BookmarkBorder, Icons.Default.Person)
+
+    // Colores dinámicos que cambian según el estado de darkModeEnabled
+    val backgroundColor = if (darkModeEnabled) Color(0xFF121212) else MaterialTheme.colorScheme.background
+    val bottomNavBgColor = if (darkModeEnabled) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (darkModeEnabled) Color.White else Color.Black
+    val secondaryTextColor = if (darkModeEnabled) Color.LightGray else Color.Gray
 
     Scaffold(
         topBar = {
@@ -49,14 +58,13 @@ fun PerfilScreen(
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = Color.White) {
+            NavigationBar(containerColor = bottomNavBgColor) {
                 bottomNavItems.forEachIndexed { index, item ->
                     NavigationBarItem(
                         icon = { Icon(bottomNavIcons[index], contentDescription = item) },
                         label = { Text(item) },
                         selected = selectedItem == index,
                         onClick = {
-                            // ¡CORRECCIÓN DE NAVEGACIÓN!
                             if (item != "Perfil") {
                                 onNavigate(item)
                             }
@@ -68,52 +76,87 @@ fun PerfilScreen(
                     )
                 }
             }
-        }
+        },
+        containerColor = backgroundColor // Aplicamos el color de fondo dinámico
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Spacer(modifier = Modifier.height(24.dp))
-            Image(painter = painterResource(id = R.drawable.ic_launcher_background), contentDescription = null, modifier = Modifier.size(120.dp).clip(CircleShape).border(2.dp, Color.LightGray, CircleShape), contentScale = ContentScale.Crop)
+
+            // Foto de Perfil
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_background),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, Color.LightGray, CircleShape),
+                contentScale = ContentScale.Crop
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Nelson Luis Sota", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Left 4 Dead 2 • Programador", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+
+            // Nombre y Bio (Con color dinámico)
+            Text("Nelson Luis Sota", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = textColor)
+            Text("Left 4 Dead 2 • Programador", style = MaterialTheme.typography.bodyMedium, color = secondaryTextColor)
+
             Spacer(modifier = Modifier.height(32.dp))
 
-            Text("Profile Settings", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Configuración de Perfil", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = textColor)
             Spacer(modifier = Modifier.height(16.dp))
 
-            ProfileOptionItem(Icons.Default.AccountCircle, "Informacion Personal")
-            ProfileOptionItem(Icons.Default.NotificationsNone, "Notificaciones")
-            ProfileOptionItem(Icons.Default.FavoriteBorder, "Lista de Deseos")
+            // Opciones en español
+            ProfileOptionItem(Icons.Default.AccountCircle, "Información Personal", textColor)
+            ProfileOptionItem(Icons.Default.NotificationsNone, "Notificaciones", textColor)
+            ProfileOptionItem(Icons.Default.FavoriteBorder, "Lista de Deseos", textColor)
 
+            // Opción Modo Oscuro
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Default.Brightness4, contentDescription = null, tint = Color(0xFF1976D2), modifier = Modifier.size(28.dp))
                 Spacer(modifier = Modifier.width(16.dp))
-                Text("Dark Mode", modifier = Modifier.weight(1f), fontSize = 18.sp)
-                Switch(checked = darkModeEnabled, onCheckedChange = { darkModeEnabled = it })
+                Text("Modo Oscuro", modifier = Modifier.weight(1f), fontSize = 18.sp, color = textColor)
+                Switch(
+                    checked = darkModeEnabled,
+                    onCheckedChange = { darkModeEnabled = it }
+                )
             }
 
+            // Opción Cerrar Sesión
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Default.ArrowCircleRight, contentDescription = null, tint = Color(0xFF1976D2), modifier = Modifier.size(28.dp))
                 Spacer(modifier = Modifier.width(16.dp))
                 TextButton(onClick = onCerrarSesion, contentPadding = PaddingValues(0.dp)) {
-                    Text("Log Out", fontSize = 18.sp, color = Color.Black)
+                    Text("Cerrar Sesión", fontSize = 18.sp, color = textColor)
                 }
             }
 
             Spacer(modifier = Modifier.weight(1f))
-            Button(onClick = onReturnHome, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))) {
-                Text("Return to Home", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+
+            // Botón Volver al Inicio
+            Button(
+                onClick = onReturnHome,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))
+            ) {
+                Text("Volver al Inicio", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
+// Función auxiliar para las opciones de la lista, ahora acepta el color de texto dinámico
 @Composable
-fun ProfileOptionItem(icon: ImageVector, title: String) {
+fun ProfileOptionItem(icon: ImageVector, title: String, textColor: Color) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF1976D2), modifier = Modifier.size(28.dp))
         Spacer(modifier = Modifier.width(16.dp))
-        Text(text = title, fontSize = 18.sp)
+        Text(text = title, fontSize = 18.sp, color = textColor)
     }
 }

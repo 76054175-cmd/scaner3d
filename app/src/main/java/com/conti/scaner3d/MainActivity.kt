@@ -3,18 +3,25 @@ package com.conti.scaner3d
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.room.Room
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
+import androidx.room.Room
 import kotlinx.coroutines.launch
 
-// Importaciones de Compose para manejar estados
-import androidx.compose.runtime.*
-
-// Importaciones de tu Base de Datos
+// Importaciones de tu base de datos
 import com.conti.scaner3d.baseDatosLocal.AppDatabase
 import com.conti.scaner3d.baseDatosLocal.Usuario
 
-// Importaciones de TODAS tus pantallas
+// Importaciones de tus pantallas
 import com.conti.scaner3d.PantallaLogin.LoginScreen
 import com.conti.scaner3d.PantallasOperacion.InicioScreen
 import com.conti.scaner3d.PantallasOperacion.EscanearScreen
@@ -25,84 +32,81 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Construir la base de datos
+        // Configuración de la Base de Datos
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
-            "scaner3d-db" // Nombre del archivo SQLite
+            "scaner3d-db"
         ).build()
 
         val usuarioDao = db.usuarioDao()
 
-        // 2. ¡TRUCO PARA PROBAR! Insertamos un usuario administrador si no existe.
         lifecycleScope.launch {
             try {
                 usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
             } catch (e: Exception) {
-                // Si el usuario ya existe, Room podría lanzar un error dependiendo de cómo lo configuraste.
-                // Lo capturamos para que no cierre la app.
+                // Ignorar si el usuario ya existe
             }
         }
 
-        // 3. Mostrar la interfaz gráfica y manejar la navegación
         setContent {
-            // Variables de estado para controlar la app
+            // Variables de estado
             var pantallaActual by remember { mutableStateOf("login") }
             var usuarioLogueado by remember { mutableStateOf("") }
+            var isDarkMode by remember { mutableStateOf(false) }
 
-            // Enrutador principal de la aplicación
-            when (pantallaActual) {
+            // Configurar el tema según el estado
+            val colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
 
-                "login" -> {
-                    LoginScreen(
-                        usuarioDao = usuarioDao,
-                        onLoginSuccess = { nombreUsuario ->
-                            // Guardamos el nombre y vamos a Inicio
-                            usuarioLogueado = nombreUsuario
-                            pantallaActual = "Inicio"
+            MaterialTheme(colorScheme = colorScheme) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    when (pantallaActual) {
+                        "login" -> {
+                            LoginScreen(
+                                usuarioDao = usuarioDao,
+                                onLoginSuccess = { nombreUsuario: String ->
+                                    usuarioLogueado = nombreUsuario
+                                    pantallaActual = "Inicio"
+                                }
+                            )
                         }
-                    )
-                }
-
-                "Inicio" -> {
-                    InicioScreen(
-                        usuario = usuarioLogueado,
-                        onNavigate = { destino ->
-                            pantallaActual = destino // Puede ser "Escanear", "Historial" o "Perfil"
+                        "Inicio" -> {
+                            InicioScreen(
+                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                            )
                         }
-                    )
-                }
-
-                "Escanear" -> {
-                    EscanearScreen(
-                        onNavigate = { destino ->
-                            pantallaActual = destino
+                        "Escanear" -> {
+                            EscanearScreen(
+                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                            )
                         }
-                    )
-                }
-
-                "Historial" -> {
-                    HistorialScreen(
-                        onNavigate = { destino ->
-                            pantallaActual = destino
+                        "Historial" -> {
+                            HistorialScreen(
+                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                            )
                         }
-                    )
-                }
-
-                "Perfil" -> {
-                    PerfilScreen(
-                        onReturnHome = {
-                            pantallaActual = "Inicio"
-                        },
-                        onCerrarSesion = {
-                            usuarioLogueado = ""
-                            pantallaActual = "login"
-                        },
-                        // <-- AGREGAR ESTA LÍNEA AQUÍ
-                        onNavigate = { destino ->
-                            pantallaActual = destino
+                        "Perfil" -> {
+                            PerfilScreen(
+                                isDarkMode = isDarkMode,
+                                // SOLUCIÓN: Declaramos explícitamente que es Boolean
+                                onThemeChange = { nuevoEstado: Boolean ->
+                                    isDarkMode = nuevoEstado
+                                },
+                                onReturnHome = { pantallaActual = "Inicio" },
+                                onCerrarSesion = {
+                                    usuarioLogueado = ""
+                                    pantallaActual = "login"
+                                },
+                                // SOLUCIÓN: Declaramos explícitamente que es String
+                                onNavigate = { nuevaPantalla: String ->
+                                    pantallaActual = nuevaPantalla
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
