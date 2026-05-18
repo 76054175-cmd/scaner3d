@@ -3,89 +3,38 @@ package com.conti.scaner3d
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
-import com.conti.scaner3d.ui.theme.Scaner3dTheme
+import androidx.room.Room
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+
+// Importamos tus paquetes
+import com.conti.scaner3d.baseDatosLocal.AppDatabase
+import com.conti.scaner3d.baseDatosLocal.Usuario
+import com.conti.scaner3d.PantallaLogin.LoginScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // 1. Construir la base de datos
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "scaner3d-db" // Nombre del archivo SQLite que se guardará en el celular
+        ).build()
+
+        val usuarioDao = db.usuarioDao()
+
+        // 2. ¡TRUCO PARA PROBAR! Insertamos un usuario administrador si no existe.
+        // Se ejecuta en segundo plano.
+        lifecycleScope.launch {
+            usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
+        }
+
+        // 3. Mostrar la interfaz gráfica
         setContent {
-            Scaner3dTheme {
-                Scaner3dApp()
-            }
+            // Llamamos a tu pantalla y le inyectamos la conexión a BD
+            LoginScreen(usuarioDao = usuarioDao)
         }
-    }
-}
-
-@PreviewScreenSizes
-@Composable
-fun Scaner3dApp() {
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
-
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            AppDestinations.entries.forEach {
-                item(
-                    icon = {
-                        Icon(
-                            painterResource(it.icon),
-                            contentDescription = it.label
-                        )
-                    },
-                    label = { Text(it.label) },
-                    selected = it == currentDestination,
-                    onClick = { currentDestination = it }
-                )
-            }
-        }
-    ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-            Greeting(
-                name = "Android",
-                modifier = Modifier.padding(innerPadding)
-            )
-        }
-    }
-}
-
-enum class AppDestinations(
-    val label: String,
-    val icon: Int,
-) {
-    HOME("Home", R.drawable.ic_home),
-    FAVORITES("Favorites", R.drawable.ic_favorite),
-    PROFILE("Profile", R.drawable.ic_account_box),
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Scaner3dTheme {
-        Greeting("Android")
     }
 }
