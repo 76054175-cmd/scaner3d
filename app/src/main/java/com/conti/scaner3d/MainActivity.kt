@@ -7,15 +7,19 @@ import androidx.room.Room
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
-// 1. IMPORTANTE: Añadimos las herramientas de estado de Compose
+// Importaciones de Compose para manejar estados
 import androidx.compose.runtime.*
 
-// Importamos tus paquetes
+// Importaciones de tu Base de Datos
 import com.conti.scaner3d.baseDatosLocal.AppDatabase
 import com.conti.scaner3d.baseDatosLocal.Usuario
+
+// Importaciones de TODAS tus pantallas
 import com.conti.scaner3d.PantallaLogin.LoginScreen
-// 2. IMPORTANTE: Importamos la pantalla de Inicio desde su paquete
 import com.conti.scaner3d.PantallasOperacion.InicioScreen
+import com.conti.scaner3d.PantallasOperacion.EscanearScreen
+import com.conti.scaner3d.PantallasOperacion.HistorialScreen
+import com.conti.scaner3d.PantallasOperacion.PerfilScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,40 +29,78 @@ class MainActivity : ComponentActivity() {
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
-            "scaner3d-db"
+            "scaner3d-db" // Nombre del archivo SQLite
         ).build()
 
         val usuarioDao = db.usuarioDao()
 
         // 2. ¡TRUCO PARA PROBAR! Insertamos un usuario administrador si no existe.
         lifecycleScope.launch {
-            usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
+            try {
+                usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
+            } catch (e: Exception) {
+                // Si el usuario ya existe, Room podría lanzar un error dependiendo de cómo lo configuraste.
+                // Lo capturamos para que no cierre la app.
+            }
         }
 
-        // 3. Mostrar la interfaz gráfica con el control de navegación
+        // 3. Mostrar la interfaz gráfica y manejar la navegación
         setContent {
-            // Variables para controlar la navegación y recordar al usuario
+            // Variables de estado para controlar la app
             var pantallaActual by remember { mutableStateOf("login") }
             var usuarioLogueado by remember { mutableStateOf("") }
 
-            // Dependiendo del valor de 'pantallaActual', mostramos una u otra
+            // Enrutador principal de la aplicación
             when (pantallaActual) {
+
                 "login" -> {
                     LoginScreen(
                         usuarioDao = usuarioDao,
                         onLoginSuccess = { nombreUsuario ->
-                            // Cuando el login es exitoso, guardamos el nombre y cambiamos de pantalla
+                            // Guardamos el nombre y vamos a Inicio
                             usuarioLogueado = nombreUsuario
-                            pantallaActual = "inicio"
+                            pantallaActual = "Inicio"
                         }
                     )
                 }
-                "inicio" -> {
+
+                "Inicio" -> {
                     InicioScreen(
                         usuario = usuarioLogueado,
+                        onNavigate = { destino ->
+                            pantallaActual = destino // Puede ser "Escanear", "Historial" o "Perfil"
+                        }
+                    )
+                }
+
+                "Escanear" -> {
+                    EscanearScreen(
+                        onNavigate = { destino ->
+                            pantallaActual = destino
+                        }
+                    )
+                }
+
+                "Historial" -> {
+                    HistorialScreen(
+                        onNavigate = { destino ->
+                            pantallaActual = destino
+                        }
+                    )
+                }
+
+                "Perfil" -> {
+                    PerfilScreen(
+                        onReturnHome = {
+                            pantallaActual = "Inicio"
+                        },
                         onCerrarSesion = {
-                            // Si el usuario presiona cerrar sesión, vuelve a la pantalla de login
+                            usuarioLogueado = ""
                             pantallaActual = "login"
+                        },
+                        // <-- AGREGAR ESTA LÍNEA AQUÍ
+                        onNavigate = { destino ->
+                            pantallaActual = destino
                         }
                     )
                 }
