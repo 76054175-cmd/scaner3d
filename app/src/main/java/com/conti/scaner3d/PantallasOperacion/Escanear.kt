@@ -14,7 +14,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,17 +27,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.conti.scaner3d.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -65,14 +63,20 @@ fun EscanearScreen(
         }
     }
 
-    // Variables para el progreso del escaneo
+    // Variables para el simulador de progreso del escaneo
     var escaneando by remember { mutableStateOf(false) }
     var progresoEscaneo by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
 
     // ---------------------------------------------------------------
-    // EN TIEMPO REAL: VARIABLES DE ESTADO PARA LOS SENSORES
+    // HISTORIAL EN TIEMPO REAL PARA LOS GRÁFICOS
     // ---------------------------------------------------------------
+    val maxPuntosGraphed = 50 // Cuántos puntos se muestran horizontalmente en pantalla
+
+    val historialAcelerometro = remember { mutableStateListOf<Triple<Float, Float, Float>>() }
+    val historialGiroscopio = remember { mutableStateListOf<Triple<Float, Float, Float>>() }
+
+    // Variables numéricas de texto instantáneo
     var accX by remember { mutableStateOf(0f) }
     var accY by remember { mutableStateOf(0f) }
     var accZ by remember { mutableStateOf(0f) }
@@ -81,7 +85,6 @@ fun EscanearScreen(
     var gyroY by remember { mutableStateOf(0f) }
     var gyroZ by remember { mutableStateOf(0f) }
 
-    // LÓGICA DE CONEXIÓN A LOS SENSORES DE ANDROID
     DisposableEffect(Unit) {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -90,16 +93,29 @@ fun EscanearScreen(
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
                 if (event == null) return
+
                 when (event.sensor.type) {
                     Sensor.TYPE_ACCELEROMETER -> {
                         accX = event.values[0]
                         accY = event.values[1]
                         accZ = event.values[2]
+
+                        // Añadir al historial y recortar excedente
+                        historialAcelerometro.add(Triple(accX, accY, accZ))
+                        if (historialAcelerometro.size > maxPuntosGraphed) {
+                            historialAcelerometro.removeAt(0)
+                        }
                     }
                     Sensor.TYPE_GYROSCOPE -> {
                         gyroX = event.values[0]
                         gyroY = event.values[1]
                         gyroZ = event.values[2]
+
+                        // Añadir al historial y recortar excedente
+                        historialGiroscopio.add(Triple(gyroX, gyroY, gyroZ))
+                        if (historialGiroscopio.size > maxPuntosGraphed) {
+                            historialGiroscopio.removeAt(0)
+                        }
                     }
                 }
             }
@@ -107,11 +123,10 @@ fun EscanearScreen(
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        // Registrar sensores al abrir la pantalla
+        // Registrar oyentes usando SENSOR_DELAY_UI para actualizaciones fluidas pero eficientes
         acelerometro?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
         giroscopio?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
 
-        // Apagar sensores automáticamente al salir de la pantalla
         onDispose {
             sensorManager.unregisterListener(listener)
         }
@@ -273,7 +288,7 @@ fun EscanearScreen(
                 }
             }
 
-            // TARJETA 2: Sensores (Acelerómetro y Giroscopio Reales)
+            // TARJETA 2: Gráficos de los Sensores en Tiempo Real
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -283,33 +298,109 @@ fun EscanearScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_background),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)).background(Color.LightGray),
-                        contentScale = ContentScale.Crop
-                    )
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // ACELERÓMETRO REAL
-                    Text("Acelerometro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                    // --- SECCIÓN 1: ACELERÓMETRO ---
+                    Text("Acelerómetro (m/s²)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
                     Text(
-                        text = String.format("X: %.2f m/s², Y: %.2f m/s², Z: %.2f m/s²", accX, accY, accZ),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = String.format("X: %.2f  |  Y: %.2f  |  Z: %.2f", accX, accY, accZ),
+                        style = MaterialTheme.typography.bodySmall,
                         color = Color.DarkGray
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Render del Gráfico Nativo del Acelerómetro
+                    GraficoSensorNativo(puntos = historialAcelerometro, rangoMax = 15f, maxPuntos = maxPuntosGraphed)
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // --- SECCIÓN 2: GIROSCOPIO ---
+                    Text("Giroscopio (rad/s)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                    Text(
+                        text = String.format("X: %.2f  |  Y: %.2f  |  Z: %.2f", gyroX, gyroY, gyroZ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.DarkGray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Render del Gráfico Nativo del Giroscopio
+                    GraficoSensorNativo(puntos = historialGiroscopio, rangoMax = 6f, maxPuntos = maxPuntosGraphed)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // GIROSCOPIO REAL
-                    Text("Giroscopio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
-                    Text(
-                        text = String.format("X: %.2f rad/s, Y: %.2f rad/s, Z: %.2f rad/s", gyroX, gyroY, gyroZ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.DarkGray
-                    )
+                    // Leyenda identificadora de colores
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("● Eje X (Rojo)   ", color = Color(0xFFE53935), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("● Eje Y (Verde)   ", color = Color(0xFF4CAF50), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("● Eje Z (Azul)", color = Color(0xFF1E88E5), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------
+// COMPOSABLE COMPLEMENTARIO: COMPONENTE DE DIBUJO DIRECTO POR CANVAS (SIN LIBRERÍAS)
+// ---------------------------------------------------------------------------------
+@Composable
+fun GraficoSensorNativo(
+    puntos: List<Triple<Float, Float, Float>>,
+    rangoMax: Float,
+    maxPuntos: Int
+) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(110.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFF9F9F9))
+    ) {
+        val anchoTotal = size.width
+        val altoTotal = size.height
+        val centroY = altoTotal / 2f
+        val distanciaEntrePuntos = anchoTotal / (maxPuntos - 1)
+        val escalaY = (altoTotal / 2f) / rangoMax
+
+        // Dibujar línea guía central (Cero absoluto)
+        drawLine(
+            color = Color(0xFFE0E0E0),
+            start = Offset(0f, centroY),
+            end = Offset(anchoTotal, centroY),
+            strokeWidth = 2f
+        )
+
+        // Pintar líneas solo si hay suficiente historial acumulado para interconectarlos
+        if (puntos.size > 1) {
+            for (i in 0 until puntos.size - 1) {
+                val x1 = i * distanciaEntrePuntos
+                val x2 = (i + 1) * distanciaEntrePuntos
+
+                // Trazo Eje X (Línea Roja)
+                drawLine(
+                    color = Color(0xFFE53935),
+                    start = Offset(x1, centroY - (puntos[i].first * escalaY)),
+                    end = Offset(x2, centroY - (puntos[i + 1].first * escalaY)),
+                    strokeWidth = 4f
+                )
+
+                // Trazo Eje Y (Línea Verde)
+                drawLine(
+                    color = Color(0xFF4CAF50),
+                    start = Offset(x1, centroY - (puntos[i].second * escalaY)),
+                    end = Offset(x2, centroY - (puntos[i + 1].second * escalaY)),
+                    strokeWidth = 4f
+                )
+
+                // Trazo Eje Z (Línea Azul)
+                drawLine(
+                    color = Color(0xFF1E88E5),
+                    start = Offset(x1, centroY - (puntos[i].third * escalaY)),
+                    end = Offset(x2, centroY - (puntos[i + 1].third * escalaY)),
+                    strokeWidth = 4f
+                )
             }
         }
     }
