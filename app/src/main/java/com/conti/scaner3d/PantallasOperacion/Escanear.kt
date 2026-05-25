@@ -1,7 +1,12 @@
 package com.conti.scaner3d.PantallasOperacion
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,7 +50,6 @@ fun EscanearScreen(
     val bottomNavItems = listOf("Inicio", "Escanear", "Historial", "Perfil")
     val bottomNavIcons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.BookmarkBorder, Icons.Default.Person)
 
-    // Variables para el permiso de la cámara
     val context = LocalContext.current
     var tienePermisoCamara by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -61,12 +65,58 @@ fun EscanearScreen(
         }
     }
 
-    // ---------------------------------------------------------------
-    // NUEVAS VARIABLES PARA EL PROGRESO DEL ESCANEO
-    // ---------------------------------------------------------------
+    // Variables para el progreso del escaneo
     var escaneando by remember { mutableStateOf(false) }
     var progresoEscaneo by remember { mutableIntStateOf(0) }
     val coroutineScope = rememberCoroutineScope()
+
+    // ---------------------------------------------------------------
+    // EN TIEMPO REAL: VARIABLES DE ESTADO PARA LOS SENSORES
+    // ---------------------------------------------------------------
+    var accX by remember { mutableStateOf(0f) }
+    var accY by remember { mutableStateOf(0f) }
+    var accZ by remember { mutableStateOf(0f) }
+
+    var gyroX by remember { mutableStateOf(0f) }
+    var gyroY by remember { mutableStateOf(0f) }
+    var gyroZ by remember { mutableStateOf(0f) }
+
+    // LÓGICA DE CONEXIÓN A LOS SENSORES DE ANDROID
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val giroscopio = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event == null) return
+                when (event.sensor.type) {
+                    Sensor.TYPE_ACCELEROMETER -> {
+                        accX = event.values[0]
+                        accY = event.values[1]
+                        accZ = event.values[2]
+                    }
+                    Sensor.TYPE_GYROSCOPE -> {
+                        gyroX = event.values[0]
+                        gyroY = event.values[1]
+                        gyroZ = event.values[2]
+                    }
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        // Registrar sensores al abrir la pantalla
+        acelerometro?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+        giroscopio?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+
+        // Apagar sensores automáticamente al salir de la pantalla
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+    // ---------------------------------------------------------------
 
     Scaffold(
         topBar = {
@@ -128,8 +178,6 @@ fun EscanearScreen(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-
-                    // Vista de Cámara
                     if (tienePermisoCamara) {
                         VistaCamara(
                             modifier = Modifier
@@ -158,7 +206,6 @@ fun EscanearScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Título de la sección
                     Text(
                         text = "Realizando Escaneo",
                         style = MaterialTheme.typography.titleLarge,
@@ -169,23 +216,21 @@ fun EscanearScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // ¡NUEVO!: BOTÓN PARA ESCANEAR
                     Button(
                         onClick = {
                             if (!escaneando) {
                                 escaneando = true
                                 progresoEscaneo = 0
-                                // Ejecuta el bucle del 1% al 100% en segundo plano
                                 coroutineScope.launch {
                                     for (i in 1..100) {
                                         progresoEscaneo = i
-                                        delay(40) // Ajusta el tiempo (40ms por número = aprox 4 segundos totales)
+                                        delay(40)
                                     }
                                     escaneando = false
                                 }
                             }
                         },
-                        enabled = !escaneando, // Deshabilitar el botón mientras escanea para evitar bugs
+                        enabled = !escaneando,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp)
@@ -199,7 +244,6 @@ fun EscanearScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // ¡NUEVO!: MENSAJE DINÁMICO DE PROGRESO DEBAJO DEL BOTÓN
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center
@@ -215,7 +259,7 @@ fun EscanearScreen(
                             Text(
                                 text = "¡Escaneo completado con éxito! (100%)",
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = Color(0xFF2E7D32), // Color verde de éxito
+                                color = Color(0xFF2E7D32),
                                 fontWeight = FontWeight.Bold
                             )
                         } else {
@@ -229,7 +273,7 @@ fun EscanearScreen(
                 }
             }
 
-            // TARJETA 2: Sensores (Acelerómetro y Giroscopio)
+            // TARJETA 2: Sensores (Acelerómetro y Giroscopio Reales)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -239,24 +283,38 @@ fun EscanearScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Image(painter = painterResource(id = R.drawable.ic_launcher_background), contentDescription = null, modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)).background(Color.LightGray), contentScale = ContentScale.Crop)
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_background),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)).background(Color.LightGray),
+                        contentScale = ContentScale.Crop
+                    )
+
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    // ACELERÓMETRO REAL
                     Text("Acelerometro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
-                    Text("+2.3m/s^2 X, +2.3m/s^2 Y, +2.3m/s^2 Z", style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
+                    Text(
+                        text = String.format("X: %.2f m/s², Y: %.2f m/s², Z: %.2f m/s²", accX, accY, accZ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.DarkGray
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("Giroscopio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
-                            Text("30° X, 50° Y, 80° Z", style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
-                        }
-                    }
+
+                    // GIROSCOPIO REAL
+                    Text("Giroscopio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                    Text(
+                        text = String.format("X: %.2f rad/s, Y: %.2f rad/s, Z: %.2f rad/s", gyroX, gyroY, gyroZ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.DarkGray
+                    )
                 }
             }
         }
     }
 }
 
-// COMPONENTE DE CÁMARA (Se mantiene intacto)
 @Composable
 fun VistaCamara(modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
