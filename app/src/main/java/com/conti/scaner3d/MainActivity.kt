@@ -32,30 +32,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Configuración de la Base de Datos
+        // Configuración de la Base de Datos corregida para la versión 2
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
             "scaner3d-db"
-        ).build()
+        ).fallbackToDestructiveMigration() // ¡IMPORTANTE! Evita errores por el cambio de columnas
+            .build()
 
         val usuarioDao = db.usuarioDao()
 
         lifecycleScope.launch {
             try {
-                usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
-            } catch (e: Exception) {
-                // Ignorar si el usuario ya existe
-            }
+                if (usuarioDao.obtenerUsuarioPorNombre("admin") == null) {
+                    usuarioDao.insertarUsuario(Usuario(usuario = "admin", contrasena = "1234"))
+                }
+            } catch (e: Exception) { }
         }
 
         setContent {
-            // Variables de estado
             var pantallaActual by remember { mutableStateOf("login") }
             var usuarioLogueado by remember { mutableStateOf("") }
             var isDarkMode by remember { mutableStateOf(false) }
 
-            // Configurar el tema según el estado
             val colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
 
             MaterialTheme(colorScheme = colorScheme) {
@@ -89,20 +88,20 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         "Perfil" -> {
+                            // PASAMOS LAS VARIABLES CORRESPONDIENTES AL PERFIL
                             PerfilScreen(
+                                usuarioLogueado = usuarioLogueado,
+                                usuarioDao = usuarioDao,
                                 isDarkMode = isDarkMode,
-                                // SOLUCIÓN: Declaramos explícitamente que es Boolean
-                                onThemeChange = { nuevoEstado: Boolean ->
-                                    isDarkMode = nuevoEstado
-                                },
+                                onThemeChange = { nuevoEstado: Boolean -> isDarkMode = nuevoEstado },
                                 onReturnHome = { pantallaActual = "Inicio" },
                                 onCerrarSesion = {
                                     usuarioLogueado = ""
                                     pantallaActual = "login"
                                 },
-                                // SOLUCIÓN: Declaramos explícitamente que es String
-                                onNavigate = { nuevaPantalla: String ->
-                                    pantallaActual = nuevaPantalla
+                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla },
+                                onUsuarioActualizado = { nuevoNombre: String ->
+                                    usuarioLogueado = nuevoNombre // Actualiza el estado global si cambia de nombre
                                 }
                             )
                         }

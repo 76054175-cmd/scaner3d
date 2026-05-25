@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -31,6 +32,7 @@ fun LoginScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current // Para quitar selecciones y focos de los teclados
 
     // Estados para controlar lo que escribe el usuario
     var usuarioInput by remember { mutableStateOf("") }
@@ -41,6 +43,24 @@ fun LoginScreen(
     var esModoRegistro by remember { mutableStateOf(false) }
     var contrasenaVisible by remember { mutableStateOf(false) }
     var confirmarContrasenaVisible by remember { mutableStateOf(false) }
+
+    // ESTADOS PARA EL ALERT BOX (DIALOG)
+    var mostrarAlertaError by remember { mutableStateOf(false) }
+    var mensajeAlertaError by remember { mutableStateOf("") }
+
+    // COMPONENTE ALERT BOX (NATIVO DE COMPOSE)
+    if (mostrarAlertaError) {
+        AlertDialog(
+            onDismissRequest = { mostrarAlertaError = false },
+            confirmButton = {
+                TextButton(onClick = { mostrarAlertaError = false }) {
+                    Text("Aceptar", color = Color(0xFF1976D2), fontWeight = FontWeight.Bold)
+                }
+            },
+            title = { Text("Atención", fontWeight = FontWeight.Bold) },
+            text = { Text(mensajeAlertaError) }
+        )
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background
@@ -129,42 +149,74 @@ fun LoginScreen(
             // Botón de Acción Dinámico (Ingresar o Registrarse)
             Button(
                 onClick = {
+                    // Validación de campos vacíos
                     if (usuarioInput.isEmpty() || contrasenaInput.isEmpty()) {
-                        Toast.makeText(context, "Por favor, llena todos los campos", Toast.LENGTH_SHORT).show()
+                        mensajeAlertaError = "Por favor, llena todos los campos obligatorios."
+                        mostrarAlertaError = true
+
+                        // Limpieza inmediata y remoción de foco
+                        usuarioInput = ""
+                        contrasenaInput = ""
+                        confirmarContrasenaInput = ""
+                        focusManager.clearFocus()
                         return@Button
                     }
 
                     if (esModoRegistro) {
                         // ---- ACCIÓN: REGISTRAR UN NUEVO USUARIO ----
                         if (contrasenaInput != confirmarContrasenaInput) {
-                            Toast.makeText(context, "Las contraseñas no coinciden", Toast.LENGTH_SHORT).show()
+                            mensajeAlertaError = "Las contraseñas ingresadas no coinciden. Inténtalo de nuevo."
+                            mostrarAlertaError = true
+
+                            // Limpieza inmediata y remoción de foco
+                            usuarioInput = ""
+                            contrasenaInput = ""
+                            confirmarContrasenaInput = ""
+                            focusManager.clearFocus()
                             return@Button
                         }
 
                         coroutineScope.launch {
                             try {
-                                // Se crea la entidad con id = 0 para que Room lo autogenere
                                 val nuevoUsuario = Usuario(usuario = usuarioInput, contrasena = contrasenaInput)
                                 usuarioDao.insertarUsuario(nuevoUsuario)
 
                                 Toast.makeText(context, "¡Usuario registrado con éxito!", Toast.LENGTH_LONG).show()
 
-                                // Limpiamos campos y volvemos al modo de login normal
+                                // SOLUCIÓN 1: Limpiar TODOS los campos al registrar con éxito
+                                usuarioInput = ""
+                                contrasenaInput = ""
                                 confirmarContrasenaInput = ""
+                                focusManager.clearFocus() // Quita cualquier selección activa
+
                                 esModoRegistro = false
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Error al registrar: El usuario podría ya existir", Toast.LENGTH_SHORT).show()
+                                mensajeAlertaError = "Error al registrar: El nombre de usuario ya se encuentra registrado."
+                                mostrarAlertaError = true
+
+                                usuarioInput = ""
+                                contrasenaInput = ""
+                                confirmarContrasenaInput = ""
+                                focusManager.clearFocus()
                             }
                         }
                     } else {
-                        // ---- ACCIÓN: INICIAR SESIÓN (Usa tu método exacto del DAO) ----
+                        // ---- ACCIÓN: INICIAR SESIÓN ----
                         coroutineScope.launch {
                             val user = usuarioDao.login(usuarioInput, contrasenaInput)
 
                             if (user != null) {
                                 onLoginSuccess(user.usuario)
                             } else {
-                                Toast.makeText(context, "Usuario o contraseña incorrectos", Toast.LENGTH_SHORT).show()
+                                // SOLUCIÓN 2: Mostrar Alert Box al ingresar datos erróneos
+                                mensajeAlertaError = "El usuario o la contraseña ingresados son incorrectos."
+                                mostrarAlertaError = true
+
+                                // Limpieza total y quitar selecciones
+                                usuarioInput = ""
+                                contrasenaInput = ""
+                                confirmarContrasenaInput = ""
+                                focusManager.clearFocus()
                             }
                         }
                     }
@@ -189,10 +241,10 @@ fun LoginScreen(
             TextButton(
                 onClick = {
                     esModoRegistro = !esModoRegistro
-                    // Limpiamos los campos al cambiar de modo para que quede limpio
                     usuarioInput = ""
                     contrasenaInput = ""
                     confirmarContrasenaInput = ""
+                    focusManager.clearFocus()
                 }
             ) {
                 Text(
