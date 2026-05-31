@@ -160,10 +160,15 @@ fun EscanearScreen(
                         if (escaneando && !procesandoImagen) {
                             if (ultimoTiempoGyro != 0L) {
                                 val dt = (event.timestamp - ultimoTiempoGyro) * NS2S
-                                rotacionAcumulada += Math.abs(gyroY * dt)
 
-                                // 6.0 radianes es aprox. 343 grados, margen seguro para no frustrar al usuario
-                                val porcentaje = ((rotacionAcumulada / 6.0f) * 100).toInt()
+                                // 1. Sumamos el valor REAL (positivo o negativo) para que el zig-zag se reste a sí mismo
+                                rotacionAcumulada += (gyroY * dt)
+
+                                // 2. Aplicamos el valor absoluto AQUÍ, sobre el total acumulado.
+                                // Así el progreso avanza sin importar si eligió girar a la derecha o izquierda,
+                                // pero si retrocede, el porcentaje bajará.
+                                val porcentaje = ((Math.abs(rotacionAcumulada) / 6.0f) * 100).toInt()
+
                                 progresoEscaneo = porcentaje.coerceIn(0, 100)
 
                                 if (progresoEscaneo >= 100) {
