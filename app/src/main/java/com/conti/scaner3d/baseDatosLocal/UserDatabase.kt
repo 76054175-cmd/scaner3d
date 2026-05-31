@@ -2,16 +2,25 @@ package com.conti.scaner3d.baseDatosLocal
 
 import androidx.room.*
 
-// 1. ENTITY: Agregamos el campo "fotoUri" para guardar la ruta de la imagen
+// 1. ENTIDAD DE USUARIO ORIGINAL
 @Entity(tableName = "usuarios")
 data class Usuario(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     var usuario: String,
     var contrasena: String,
-    val fotoUri: String? = null // Guarda la ubicación de la foto de perfil
+    val fotoUri: String? = null
 )
 
-// 2. DAO: Agregamos funciones para buscar por nombre y actualizar
+// 2. NUEVA ENTIDAD PARA LOS ESCANEOS
+@Entity(tableName = "escaneos")
+data class Escaneo3D(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val nombre: String,
+    val fecha: String,
+    val imagenUri: String // Guarda la ruta real de la foto en el teléfono
+)
+
+// 3. DAO DE USUARIO
 @Dao
 interface UsuarioDao {
     @Query("SELECT * FROM usuarios WHERE usuario = :user AND contrasena = :pass")
@@ -23,12 +32,29 @@ interface UsuarioDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertarUsuario(usuario: Usuario)
 
-    @Update // Nueva función nativa para guardar cambios del perfil
+    @Update
     suspend fun actualizarUsuario(usuario: Usuario)
 }
 
-// 3. DATABASE: Subimos la versión a 2 debido al cambio de columnas
-@Database(entities = [Usuario::class], version = 2, exportSchema = false)
+// 4. NUEVO DAO PARA HISTORIAL DE ESCANEOS
+@Dao
+interface EscaneoDao {
+    @Query("SELECT * FROM escaneos ORDER BY id DESC")
+    suspend fun obtenerTodos(): List<Escaneo3D>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertar(escaneo: Escaneo3D)
+
+    @Update
+    suspend fun actualizar(escaneo: Escaneo3D)
+
+    @Delete
+    suspend fun eliminar(escaneo: Escaneo3D)
+}
+
+// 5. BASE DE DATOS PRINCIPAL (Versión 4)
+@Database(entities = [Usuario::class, Escaneo3D::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun usuarioDao(): UsuarioDao
+    abstract fun escaneoDao(): EscaneoDao
 }

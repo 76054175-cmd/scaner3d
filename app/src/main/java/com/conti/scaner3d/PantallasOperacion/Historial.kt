@@ -1,7 +1,10 @@
 package com.conti.scaner3d.PantallasOperacion
 
-import androidx.compose.foundation.Image
+import android.net.Uri
+import android.widget.ImageView
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -16,30 +19,80 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.conti.scaner3d.R
-
-data class HistoryModel(val id: Int, val name: String, val date: String, val imageResId: Int)
+import androidx.compose.ui.viewinterop.AndroidView
+import com.conti.scaner3d.baseDatosLocal.Escaneo3D
+import com.conti.scaner3d.baseDatosLocal.EscaneoDao
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistorialScreen(
+    escaneoDao: EscaneoDao,
     onNavigate: (String) -> Unit = {}
 ) {
-    val selectedItem = 2 // Índice de Historial
+    val selectedItem = 2
     val bottomNavItems = listOf("Inicio", "Escanear", "Historial", "Perfil")
     val bottomNavIcons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.BookmarkBorder, Icons.Default.Person)
 
-    val historyModels = listOf(
-        HistoryModel(1, "Modelo 1", "21 de Abril de 2026", R.drawable.ic_launcher_background),
-        HistoryModel(2, "Modelo 2", "20 de Abril de 2026", R.drawable.ic_launcher_background),
-        HistoryModel(3, "Modelo 3", "19 de Abril de 2026", R.drawable.ic_launcher_background),
-        HistoryModel(4, "Modelo 4", "18 de Abril de 2026", R.drawable.ic_launcher_background)
-    )
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
+
+    var mostrarDialog by remember { mutableStateOf(false) }
+    var escaneoSeleccionado by remember { mutableStateOf<Escaneo3D?>(null) }
+    var nombreEditado by remember { mutableStateOf("") }
+
+    // Cargar historial al iniciar
+    LaunchedEffect(Unit) {
+        historyModels = escaneoDao.obtenerTodos()
+    }
+
+    // Cuadro de Diálogo para Editar/Eliminar
+    if (mostrarDialog && escaneoSeleccionado != null) {
+        AlertDialog(
+            onDismissRequest = { mostrarDialog = false },
+            title = { Text("Gestionar Modelo", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = nombreEditado,
+                    onValueChange = { nombreEditado = it },
+                    label = { Text("Nombre del Escaneo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            val actualizado = escaneoSeleccionado!!.copy(nombre = nombreEditado)
+                            escaneoDao.actualizar(actualizado)
+                            historyModels = escaneoDao.obtenerTodos()
+                            mostrarDialog = false
+                            Toast.makeText(context, "Nombre actualizado", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) { Text("Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    coroutineScope.launch {
+                        escaneoDao.eliminar(escaneoSeleccionado!!)
+                        historyModels = escaneoDao.obtenerTodos()
+                        mostrarDialog = false
+                        Toast.makeText(context, "Escaneo eliminado", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Eliminar", color = Color.Red) }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -62,10 +115,7 @@ fun HistorialScreen(
                         label = { Text(item) },
                         selected = selectedItem == index,
                         onClick = {
-                            // ¡ESTA ES LA CORRECCIÓN!
-                            if (item != "Historial") {
-                                onNavigate(item)
-                            }
+                            if (item != "Historial") onNavigate(item)
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Color(0xFF1976D2), selectedTextColor = Color(0xFF1976D2),
@@ -83,18 +133,45 @@ fun HistorialScreen(
             Text("Tienes ${historyModels.size} modelos guardados", style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
             Spacer(modifier = Modifier.height(24.dp))
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxSize()
-            ) {
-                items(historyModels) { model ->
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color.LightGray)) {
-                            Image(painter = painterResource(id = model.imageResId), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color.White))
+            if (historyModels.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No hay escaneos guardados.", color = Color.Gray)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxSize()
+                ) {
+                    items(historyModels) { model ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    escaneoSeleccionado = model
+                                    nombreEditado = model.nombre
+                                    mostrarDialog = true
+                                }
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color.LightGray)) {
+                                // --- RENDERIZADO DE LA FOTO REAL CAPTURADA ---
+                                AndroidView(
+                                    factory = { ctx ->
+                                        ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+                                    },
+                                    update = { imageView ->
+                                        try {
+                                            imageView.setImageURI(Uri.parse(model.imagenUri))
+                                        } catch (e: Exception) {
+                                            imageView.setImageResource(android.R.drawable.ic_menu_report_image)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color.White))
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(model.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                            Text(model.fecha, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(model.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text(model.date, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 }
             }

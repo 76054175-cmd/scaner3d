@@ -17,11 +17,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import kotlinx.coroutines.launch
 
-// Importaciones de tu base de datos
 import com.conti.scaner3d.baseDatosLocal.AppDatabase
 import com.conti.scaner3d.baseDatosLocal.Usuario
 
-// Importaciones de tus pantallas
 import com.conti.scaner3d.PantallaLogin.LoginScreen
 import com.conti.scaner3d.PantallasOperacion.InicioScreen
 import com.conti.scaner3d.PantallasOperacion.EscanearScreen
@@ -32,15 +30,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Configuración de la Base de Datos corregida para la versión 2
+        // Base de Datos Versión 3 con DestructiveMigration
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
             "scaner3d-db"
-        ).fallbackToDestructiveMigration() // ¡IMPORTANTE! Evita errores por el cambio de columnas
-            .build()
+        ).fallbackToDestructiveMigration().build()
 
         val usuarioDao = db.usuarioDao()
+        val escaneoDao = db.escaneoDao()
 
         lifecycleScope.launch {
             try {
@@ -74,21 +72,23 @@ class MainActivity : ComponentActivity() {
                         }
                         "Inicio" -> {
                             InicioScreen(
+                                usuario = usuarioLogueado,
                                 onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
                             )
                         }
                         "Escanear" -> {
                             EscanearScreen(
+                                escaneoDao = escaneoDao, // Instancia vinculada a BD
                                 onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
                             )
                         }
                         "Historial" -> {
                             HistorialScreen(
+                                escaneoDao = escaneoDao, // Instancia vinculada a BD
                                 onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
                             )
                         }
                         "Perfil" -> {
-                            // PASAMOS LAS VARIABLES CORRESPONDIENTES AL PERFIL
                             PerfilScreen(
                                 usuarioLogueado = usuarioLogueado,
                                 usuarioDao = usuarioDao,
@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla },
                                 onUsuarioActualizado = { nuevoNombre: String ->
-                                    usuarioLogueado = nuevoNombre // Actualiza el estado global si cambia de nombre
+                                    usuarioLogueado = nuevoNombre
                                 }
                             )
                         }
