@@ -21,9 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.conti.scaner3d.baseDatosLocal.Escaneo3D
 import com.conti.scaner3d.baseDatosLocal.EscaneoDao
 import kotlinx.coroutines.launch
@@ -43,7 +46,9 @@ fun HistorialScreen(
 
     var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
 
-    var mostrarDialog by remember { mutableStateOf(false) }
+    // Estados para el Visor de Imagen y Edición
+    var mostrarVisorImagen by remember { mutableStateOf(false) }
+    var mostrarDialogoEdicion by remember { mutableStateOf(false) }
     var escaneoSeleccionado by remember { mutableStateOf<Escaneo3D?>(null) }
     var nombreEditado by remember { mutableStateOf("") }
 
@@ -52,11 +57,89 @@ fun HistorialScreen(
         historyModels = escaneoDao.obtenerTodos()
     }
 
-    // Cuadro de Diálogo para Editar/Eliminar
-    if (mostrarDialog && escaneoSeleccionado != null) {
+    // --- 1. VISOR DE IMAGEN A PANTALLA COMPLETA ---
+    if (mostrarVisorImagen && escaneoSeleccionado != null) {
+        Dialog(
+            onDismissRequest = { mostrarVisorImagen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false) // Ocupa toda la pantalla
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Barra superior del Visor
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { mostrarVisorImagen = false }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Volver", tint = Color.White)
+                        }
+
+                        Text(
+                            text = escaneoSeleccionado!!.nombre,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp)
+                        )
+
+                        Row {
+                            IconButton(onClick = {
+                                nombreEditado = escaneoSeleccionado!!.nombre
+                                mostrarDialogoEdicion = true
+                            }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
+                            }
+                            IconButton(onClick = {
+                                coroutineScope.launch {
+                                    escaneoDao.eliminar(escaneoSeleccionado!!)
+                                    historyModels = escaneoDao.obtenerTodos()
+                                    mostrarVisorImagen = false
+                                    Toast.makeText(context, "Escaneo eliminado", Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Red)
+                            }
+                        }
+                    }
+
+                    // Imagen del Contorno (Muestra la imagen procesada de la base de datos)
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        AndroidView(
+                            factory = { ctx ->
+                                ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+                            },
+                            update = { imageView ->
+                                try {
+                                    imageView.setImageURI(Uri.parse(escaneoSeleccionado!!.imagenUri))
+                                } catch (e: Exception) {
+                                    imageView.setImageResource(android.R.drawable.ic_menu_report_image)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Fecha inferior
+                    Text(
+                        text = "Escaneado el: ${escaneoSeleccionado!!.fecha}",
+                        color = Color.LightGray,
+                        modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally)
+                    )
+                }
+            }
+        }
+    }
+
+    // --- 2. CUADRO DE DIÁLOGO PARA EDITAR NOMBRE ---
+    if (mostrarDialogoEdicion && escaneoSeleccionado != null) {
         AlertDialog(
-            onDismissRequest = { mostrarDialog = false },
-            title = { Text("Gestionar Modelo", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { mostrarDialogoEdicion = false },
+            title = { Text("Renombrar Modelo", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = nombreEditado,
@@ -74,7 +157,8 @@ fun HistorialScreen(
                             val actualizado = escaneoSeleccionado!!.copy(nombre = nombreEditado)
                             escaneoDao.actualizar(actualizado)
                             historyModels = escaneoDao.obtenerTodos()
-                            mostrarDialog = false
+                            escaneoSeleccionado = actualizado // Actualiza el título en el Visor
+                            mostrarDialogoEdicion = false
                             Toast.makeText(context, "Nombre actualizado", Toast.LENGTH_SHORT).show()
                         }
                     },
@@ -82,18 +166,12 @@ fun HistorialScreen(
                 ) { Text("Guardar") }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    coroutineScope.launch {
-                        escaneoDao.eliminar(escaneoSeleccionado!!)
-                        historyModels = escaneoDao.obtenerTodos()
-                        mostrarDialog = false
-                        Toast.makeText(context, "Escaneo eliminado", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("Eliminar", color = Color.Red) }
+                TextButton(onClick = { mostrarDialogoEdicion = false }) { Text("Cancelar") }
             }
         )
     }
 
+    // --- 3. PANTALLA PRINCIPAL (GRILLA DE HISTORIAL) ---
     Scaffold(
         topBar = {
             TopAppBar(
@@ -146,13 +224,13 @@ fun HistorialScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    // Al hacer clic, abre el Visor de Imagen a Pantalla Completa
                                     escaneoSeleccionado = model
-                                    nombreEditado = model.nombre
-                                    mostrarDialog = true
+                                    mostrarVisorImagen = true
                                 }
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color.LightGray)) {
-                                // --- RENDERIZADO DE LA FOTO REAL CAPTURADA ---
+                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
+                                // --- RENDERIZADO DE LA MINIATURA DEL CONTORNO ---
                                 AndroidView(
                                     factory = { ctx ->
                                         ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
@@ -166,10 +244,10 @@ fun HistorialScreen(
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
-                                Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color.White))
+                                Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color(0xFF4CAF50))) // Indicador verde
                             }
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(model.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+                            Text(model.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(model.fecha, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         }
                     }
