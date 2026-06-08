@@ -25,6 +25,7 @@ import com.conti.scaner3d.PantallasOperacion.InicioScreen
 import com.conti.scaner3d.PantallasOperacion.EscanearScreen
 import com.conti.scaner3d.PantallasOperacion.HistorialScreen
 import com.conti.scaner3d.PantallasOperacion.PerfilScreen
+import com.conti.scaner3d.PantallasOperacion.VisualizarModeloScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +53,7 @@ class MainActivity : ComponentActivity() {
             var pantallaActual by remember { mutableStateOf("login") }
             var usuarioLogueado by remember { mutableStateOf("") }
             var isDarkMode by remember { mutableStateOf(false) }
+            var jsonPathAVisualizar by remember { mutableStateOf("") }
 
             val colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
 
@@ -85,7 +87,20 @@ class MainActivity : ComponentActivity() {
                         "Historial" -> {
                             HistorialScreen(
                                 escaneoDao = escaneoDao, // Instancia vinculada a BD
-                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                                onNavigate = { nuevaPantalla: String -> 
+                                    if (nuevaPantalla.startsWith("VisualizarModelo/")) {
+                                        jsonPathAVisualizar = nuevaPantalla.removePrefix("VisualizarModelo/")
+                                        pantallaActual = "VisualizarModelo"
+                                    } else {
+                                        pantallaActual = nuevaPantalla 
+                                    }
+                                }
+                            )
+                        }
+                        "VisualizarModelo" -> {
+                            VisualizarModeloScreen(
+                                jsonPath = jsonPathAVisualizar,
+                                onBack = { pantallaActual = "Historial" }
                             )
                         }
                         "Perfil" -> {

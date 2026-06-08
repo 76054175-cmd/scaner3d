@@ -224,25 +224,17 @@ fun HistorialScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    // Al hacer clic, abre el Visor de Imagen a Pantalla Completa
-                                    escaneoSeleccionado = model
-                                    mostrarVisorImagen = true
+                                    // Al hacer clic, navega al Visualizador 3D usando la ruta del JSON
+                                    onNavigate("VisualizarModelo/${model.imagenUri}")
                                 }
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
-                                // --- RENDERIZADO DE LA MINIATURA DEL CONTORNO ---
-                                AndroidView(
-                                    factory = { ctx ->
-                                        ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-                                    },
-                                    update = { imageView ->
-                                        try {
-                                            imageView.setImageURI(Uri.parse(model.imagenUri))
-                                        } catch (e: Exception) {
-                                            imageView.setImageResource(android.R.drawable.ic_menu_report_image)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize()
+                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1976D2).copy(alpha = 0.1f))) {
+                                // Icono representativo de 3D/Wireframe
+                                Icon(
+                                    imageVector = Icons.Default.ViewInAr,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(64.dp).align(Alignment.Center),
+                                    tint = Color(0xFF1976D2)
                                 )
                                 Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color(0xFF4CAF50))) // Indicador verde
                             }

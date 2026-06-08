@@ -129,7 +129,7 @@ fun InicioScreen(
                         .fillMaxSize()
                 ) {
                     Text(
-                        text = "Hi $usuario,",
+                        text = "Hola estimado $usuario,",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = Color.Black

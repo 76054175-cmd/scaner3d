@@ -5,10 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
+import android.graphics.Color
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -22,8 +19,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,8 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -47,11 +45,17 @@ import com.conti.scaner3d.baseDatosLocal.EscaneoDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Estructuras de datos para el muestreo
+data class MuestraLinea(val yRelativo: Float, val inicioX: Float, val longitud: Float)
+data class MuestraAngulo(val angulo: Int, val lineas: List<MuestraLinea>)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,401 +63,342 @@ fun EscanearScreen(
     escaneoDao: EscaneoDao,
     onNavigate: (String) -> Unit = {}
 ) {
-    val selectedItem = 1
-    val bottomNavItems = listOf("Inicio", "Escanear", "Historial", "Perfil")
-    val bottomNavIcons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.BookmarkBorder, Icons.Default.Person)
-
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Permisos
     var tienePermisoCamara by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
+    val pedirPermisoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tienePermisoCamara = it }
 
-    val pedirPermisoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean -> tienePermisoCamara = isGranted }
-
-    LaunchedEffect(Unit) {
-        if (!tienePermisoCamara) pedirPermisoLauncher.launch(Manifest.permission.CAMERA)
-    }
-
-    // Controladores de estado
-    var escaneando by remember { mutableStateOf(false) }
-    var progresoEscaneo by remember { mutableIntStateOf(0) }
-    var pantallaCompleta by remember { mutableStateOf(false) }
+    // ESTADOS DE CONFIGURACIÓN Y PROCESO
+    var faseEscaneo by remember { mutableStateOf("CONFIGURACION") } // CONFIGURACION, CALIBRACION, CAPTURA, FINALIZADO
+    var precisionAngular by remember { mutableIntStateOf(20) }
+    var resolucionSecantes by remember { mutableIntStateOf(100) }
+    var colorFondoRef by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
+    
+    // ESTADOS DE CAPTURA
+    var anguloActual by remember { mutableIntStateOf(0) }
+    var muestrasCapturadas = remember { mutableStateListOf<MuestraAngulo>() }
     var procesandoImagen by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
     var imageCaptureUseCase by remember { mutableStateOf<ImageCapture?>(null) }
 
-    // Sensores y Detección de Rotación
-    val maxPuntosGraphed = 50
-    val historialAcelerometro = remember { mutableStateListOf<Triple<Float, Float, Float>>() }
-    val historialGiroscopio = remember { mutableStateListOf<Triple<Float, Float, Float>>() }
+    val totalFotos = 360 / precisionAngular
 
-    // Variables de Cálculo de Giro (Rotación 360°)
-    var rotacionAcumulada by remember { mutableFloatStateOf(0f) }
-    var ultimoTiempoGyro by remember { mutableLongStateOf(0L) }
-    val NS2S = 1.0f / 1000000000.0f
-
-    // Función segura para iniciar la captura
-    val iniciarCaptura: () -> Unit = {
-        procesandoImagen = true
-        escaneando = false
-
-        val photoFile = File(context.cacheDir, "escaneo_${System.currentTimeMillis()}.jpg")
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
-        imageCaptureUseCase?.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    coroutineScope.launch {
-                        // 1. Procesar la imagen nativamente (Contorno Blanco sobre Negro)
-                        val uriProcesada = procesarContornoImagen(photoFile)
-
-                        // 2. Guardar en Base de Datos Room
-                        val fechaActual = SimpleDateFormat("dd 'de' MMMM 'de' yyyy", Locale.getDefault()).format(Date())
-                        val nuevoEscaneo = Escaneo3D(
-                            nombre = "Modelo Escaneado",
-                            fecha = fechaActual,
-                            imagenUri = uriProcesada ?: Uri.fromFile(photoFile).toString() // Fallback a foto normal si falla
-                        )
-                        escaneoDao.insertar(nuevoEscaneo)
-                        Toast.makeText(context, "Giro 360° completado. Escaneo guardado.", Toast.LENGTH_LONG).show()
-
-                        // 3. Restaurar UI
-                        procesandoImagen = false
-                        pantallaCompleta = false
-                    }
-                }
-                override fun onError(exc: ImageCaptureException) {
-                    coroutineScope.launch {
-                        Toast.makeText(context, "Error al guardar imagen", Toast.LENGTH_SHORT).show()
-                        procesandoImagen = false
-                        pantallaCompleta = false
-                    }
-                }
-            }
-        )
-    }
-
-    // Lógica del Listener de Sensores (Integra Giroscopio para 360)
-    DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val acelerometro = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val giroscopio = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event == null) return
-                when (event.sensor.type) {
-                    Sensor.TYPE_ACCELEROMETER -> {
-                        historialAcelerometro.add(Triple(event.values[0], event.values[1], event.values[2]))
-                        if (historialAcelerometro.size > maxPuntosGraphed) historialAcelerometro.removeAt(0)
-                    }
-                    Sensor.TYPE_GYROSCOPE -> {
-                        val gyroY = event.values[1] // Rotación horizontal
-                        historialGiroscopio.add(Triple(event.values[0], gyroY, event.values[2]))
-                        if (historialGiroscopio.size > maxPuntosGraphed) historialGiroscopio.removeAt(0)
-
-                        // VALIDACIÓN DE GIRO COMPLETO 360°
-                        if (escaneando && !procesandoImagen) {
-                            if (ultimoTiempoGyro != 0L) {
-                                val dt = (event.timestamp - ultimoTiempoGyro) * NS2S
-
-                                // 1. Sumamos el valor REAL (positivo o negativo) para que el zig-zag se reste a sí mismo
-                                rotacionAcumulada += (gyroY * dt)
-
-                                // 2. Aplicamos el valor absoluto AQUÍ, sobre el total acumulado.
-                                // Así el progreso avanza sin importar si eligió girar a la derecha o izquierda,
-                                // pero si retrocede, el porcentaje bajará.
-                                val porcentaje = ((Math.abs(rotacionAcumulada) / 6.0f) * 100).toInt()
-
-                                progresoEscaneo = porcentaje.coerceIn(0, 100)
-
-                                if (progresoEscaneo >= 100) {
-                                    iniciarCaptura()
-                                }
-                            }
-                            ultimoTiempoGyro = event.timestamp
-                        }
-                    }
-                }
-            }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-        }
-
-        acelerometro?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
-        giroscopio?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
-
-        onDispose { sensorManager.unregisterListener(listener) }
-    }
-
-    if (pantallaCompleta) {
-        // --- VISTA PANTALLA COMPLETA (ESCANEANDO) ---
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            if (tienePermisoCamara) {
-                VistaCamara(
-                    modifier = Modifier.fillMaxSize(),
-                    onImageCaptureReady = { imageCaptureUseCase = it }
-                )
-            }
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
-
-            Column(
-                modifier = Modifier.fillMaxSize().padding(32.dp),
-                verticalArrangement = Arrangement.Bottom,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (procesandoImagen) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(50.dp))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("PROCESANDO CONTORNOS 3D...", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text("Generando trazado blanco. Por favor espera.", color = Color.LightGray, fontSize = 14.sp)
-                } else {
-                    Text("GIRA EL DISPOSITIVO 360°", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Mantén el objeto enfocado", color = Color.LightGray, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    LinearProgressIndicator(
-                        progress = { progresoEscaneo / 100f },
-                        modifier = Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp)),
-                        color = Color(0xFF4CAF50),
-                        trackColor = Color.DarkGray
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Escáner 3D - Silhouette", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = ComposeColor(0xFF1976D2), titleContentColor = ComposeColor.White)
+            )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = ComposeColor.White) {
+                val items = listOf("Inicio", "Escanear", "Historial")
+                val icons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.History)
+                items.forEachIndexed { index, item ->
+                    NavigationBarItem(
+                        icon = { Icon(icons[index], contentDescription = item) },
+                        label = { Text(item) },
+                        selected = item == "Escanear",
+                        onClick = { if (item != "Escanear") onNavigate(item) }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("$progresoEscaneo%", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
                 }
-                Spacer(modifier = Modifier.height(48.dp))
-
-                if (escaneando) {
-                    Button(
-                        onClick = {
-                            escaneando = false
-                            pantallaCompleta = false
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            when (faseEscaneo) {
+                "CONFIGURACION" -> {
+                    ConfiguracionInicial(
+                        precision = precisionAngular,
+                        onPrecisionChange = { precisionAngular = it },
+                        resolucion = resolucionSecantes,
+                        onResolucionChange = { resolucionSecantes = it },
+                        onStart = { faseEscaneo = "CALIBRACION" }
+                    )
+                }
+                "CALIBRACION" -> {
+                    CalibracionFondo(
+                        procesando = procesandoImagen,
+                        tienePermiso = tienePermisoCamara,
+                        onCalibrate = {
+                            procesandoImagen = true
+                            capturarYCalibrarColor(context, imageCaptureUseCase, onResult = { color ->
+                                colorFondoRef = color
+                                faseEscaneo = "CAPTURA"
+                                procesandoImagen = false
+                            }, onError = {
+                                Toast.makeText(context, "Error en calibración", Toast.LENGTH_SHORT).show()
+                                procesandoImagen = false
+                            })
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                    ) {
-                        Text("Cancelar", color = Color.White)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
+                        onImageCaptureReady = { imageCaptureUseCase = it }
+                    )
                 }
-            }
-        }
-    } else {
-        // --- VISTA NORMAL ---
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                            Icon(imageVector = Icons.Default.Explore, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Scanner 3D", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1976D2))
-                )
-            },
-            bottomBar = {
-                NavigationBar(containerColor = Color.White) {
-                    bottomNavItems.forEachIndexed { index, item ->
-                        NavigationBarItem(
-                            icon = { Icon(bottomNavIcons[index], contentDescription = item) },
-                            label = { Text(item) },
-                            selected = selectedItem == index,
-                            onClick = {
-                                if (item != "Escanear") onNavigate(item)
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF1976D2), selectedTextColor = Color(0xFF1976D2),
-                                unselectedIconColor = Color.Gray, unselectedTextColor = Color.Gray, indicatorColor = Color.Transparent
-                            )
-                        )
-                    }
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.background
-        ) { innerPadding ->
-            Column(
-                modifier = Modifier.padding(innerPadding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (tienePermisoCamara) {
-                            VistaCamara(
-                                modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)),
-                                onImageCaptureReady = { imageCaptureUseCase = it }
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxWidth().height(220.dp).background(Color.DarkGray))
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Button(
-                            onClick = {
-                                if (!escaneando && imageCaptureUseCase != null) {
-                                    rotacionAcumulada = 0f
-                                    ultimoTiempoGyro = 0L
-                                    progresoEscaneo = 0
-                                    escaneando = true
-                                    pantallaCompleta = true
-                                } else if (imageCaptureUseCase == null) {
-                                    Toast.makeText(context, "La cámara aún se está inicializando", Toast.LENGTH_SHORT).show()
+                "CAPTURA" -> {
+                    CapturaPorAngulos(
+                        anguloActual = anguloActual,
+                        totalFotos = totalFotos,
+                        precision = precisionAngular,
+                        procesando = procesandoImagen,
+                        tienePermiso = tienePermisoCamara,
+                        colorReferencia = colorFondoRef,
+                        onCapture = {
+                            procesandoImagen = true
+                            capturarYProcesar(
+                                context, imageCaptureUseCase, anguloActual, resolucionSecantes, colorFondoRef!!,
+                                onResult = { muestra ->
+                                    muestrasCapturadas.add(muestra)
+                                    if (anguloActual + precisionAngular >= 360) {
+                                        coroutineScope.launch {
+                                            guardarResultadoFinal(context, muestrasCapturadas, precisionAngular, resolucionSecantes, escaneoDao)
+                                            faseEscaneo = "FINALIZADO"
+                                            procesandoImagen = false
+                                        }
+                                    } else {
+                                        anguloActual += precisionAngular
+                                        procesandoImagen = false
+                                    }
+                                },
+                                onError = {
+                                    Toast.makeText(context, "Error en captura", Toast.LENGTH_SHORT).show()
+                                    procesandoImagen = false
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))
-                        ) {
-                            Text("Iniciar Escaneo 360°", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                            )
+                        },
+                        onImageCaptureReady = { imageCaptureUseCase = it }
+                    )
                 }
-
-                // Gráficos de Sensores
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Acelerómetro", fontWeight = FontWeight.Bold)
-                        GraficoSensorNativo(puntos = historialAcelerometro, rangoMax = 15f, maxPuntos = maxPuntosGraphed)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Giroscopio (Rad/s)", fontWeight = FontWeight.Bold)
-                        GraficoSensorNativo(puntos = historialGiroscopio, rangoMax = 6f, maxPuntos = maxPuntosGraphed)
-                    }
+                "FINALIZADO" -> {
+                    ResultadoFinal(onReset = {
+                        faseEscaneo = "CONFIGURACION"
+                        muestrasCapturadas.clear()
+                        anguloActual = 0
+                        colorFondoRef = null
+                    }, onVerModelo = {
+                        onNavigate("Historial") // O una ruta específica si se implementa
+                    })
                 }
             }
         }
     }
 }
 
-// ---------------- ALGORITMO NATIVO DE CONTORNOS (EDGE DETECTION) ----------------
-suspend fun procesarContornoImagen(archivoImagen: File): String? = withContext(Dispatchers.Default) {
+@Composable
+fun ConfiguracionInicial(precision: Int, onPrecisionChange: (Int) -> Unit, resolucion: Int, onResolucionChange: (Int) -> Unit, onStart: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text("1. Configuración", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Precisión Angular: $precision°")
+            Slider(value = precision.toFloat(), onValueChange = { onPrecisionChange(it.toInt()) }, valueRange = 5f..90f, steps = 16)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Resolución Vertical: $resolucion líneas")
+            Slider(value = resolucion.toFloat(), onValueChange = { onResolucionChange(it.toInt()) }, valueRange = 20f..300f)
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Text("Siguiente: Calibrar Fondo")
+            }
+        }
+    }
+}
+
+@Composable
+fun CalibracionFondo(procesando: Boolean, tienePermiso: Boolean, onCalibrate: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White)) {
+        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("2. Calibración de Fondo", fontWeight = FontWeight.Bold, color = ComposeColor(0xFF1976D2))
+            Text("Apunta al fondo vacío (sin el objeto)", fontSize = 14.sp, color = ComposeColor.Gray)
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
+                if (tienePermiso) {
+                    VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
+                    // Punto de mira central
+                    Box(modifier = Modifier.size(20.dp).border(2.dp, ComposeColor.White, CircleShape).align(Alignment.Center))
+                }
+                if (procesando) {
+                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = ComposeColor.White)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onCalibrate, enabled = !procesando, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp)) {
+                Text("Capturar Color de Fondo")
+            }
+        }
+    }
+}
+
+@Composable
+fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, colorReferencia: Triple<Int, Int, Int>?, onCapture: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
+    val fotoNumero = (anguloActual / precision) + 1
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White)) {
+        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Paso $fotoNumero de $totalFotos", fontWeight = FontWeight.Bold, color = ComposeColor(0xFF1976D2))
+                Spacer(modifier = Modifier.weight(1f))
+                colorReferencia?.let { (r,g,b) ->
+                    Box(modifier = Modifier.size(24.dp).background(ComposeColor(r, g, b), CircleShape).border(1.dp, ComposeColor.Gray, CircleShape))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Fondo", fontSize = 10.sp)
+                }
+            }
+            Text("Gira el objeto a: $anguloActual°", fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
+                if (tienePermiso) VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
+                if (procesando) {
+                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = ComposeColor.White)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onCapture, enabled = !procesando, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Capturar Ángulo $anguloActual°")
+            }
+        }
+    }
+}
+
+@Composable
+fun ResultadoFinal(onReset: () -> Unit, onVerModelo: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ComposeColor(0xFF4CAF50), modifier = Modifier.size(100.dp))
+        Text("¡Escaneo Completado!", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onVerModelo, modifier = Modifier.fillMaxWidth()) {
+            Text("Ver en Historial")
+        }
+        OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
+            Text("Nuevo Escaneo")
+        }
+    }
+}
+
+fun capturarYCalibrarColor(context: Context, imageCapture: ImageCapture?, onResult: (Triple<Int, Int, Int>) -> Unit, onError: () -> Unit) {
+    if (imageCapture == null) { onError(); return }
+    val file = File(context.cacheDir, "calibration.jpg")
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            if (bitmap != null) {
+                val pixel = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+                onResult(Triple(Color.red(pixel), Color.green(pixel), Color.blue(pixel)))
+            } else onError()
+        }
+        override fun onError(exc: ImageCaptureException) = onError()
+    })
+}
+
+fun capturarYProcesar(context: Context, imageCapture: ImageCapture?, angulo: Int, n: Int, colorFondo: Triple<Int, Int, Int>, onResult: (MuestraAngulo) -> Unit, onError: () -> Unit) {
+    if (imageCapture == null) { onError(); return }
+    val file = File(context.cacheDir, "temp_$angulo.jpg")
+    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            if (bitmap != null) {
+                onResult(extraerMuestrasSilueta(bitmap, angulo, n, colorFondo))
+            } else onError()
+        }
+        override fun onError(exc: ImageCaptureException) = onError()
+    })
+}
+
+fun extraerMuestrasSilueta(bitmap: Bitmap, angulo: Int, n: Int, colorFondo: Triple<Int, Int, Int>): MuestraAngulo {
+    val (refR, refG, refB) = colorFondo
+    val width = bitmap.width
+    val height = bitmap.height
+    val lineas = mutableListOf<MuestraLinea>()
+    val umbralTolerancia = 50.0
+
+    for (i in 0 until n) {
+        val yRelativo = i.toFloat() / n
+        val yPixel = (yRelativo * height).toInt().coerceIn(0, height - 1)
+        var xInicio = -1
+        var xFin = -1
+        for (x in 0 until width) {
+            val pixel = bitmap.getPixel(x, yPixel)
+            val diff = Math.sqrt(
+                Math.pow((Color.red(pixel) - refR).toDouble(), 2.0) +
+                Math.pow((Color.green(pixel) - refG).toDouble(), 2.0) +
+                Math.pow((Color.blue(pixel) - refB).toDouble(), 2.0)
+            )
+            if (diff > umbralTolerancia) {
+                if (xInicio == -1) xInicio = x
+                xFin = x
+            }
+        }
+        if (xInicio != -1) {
+            lineas.add(MuestraLinea(yRelativo, xInicio.toFloat() / width, (xFin - xInicio).toFloat() / width))
+        }
+    }
+    return MuestraAngulo(angulo, lineas)
+}
+
+suspend fun guardarResultadoFinal(context: Context, muestras: List<MuestraAngulo>, precision: Int, resolucion: Int, escaneoDao: EscaneoDao) = withContext(Dispatchers.IO) {
     try {
-        // 1. Redimensionar de forma segura para no saturar memoria RAM (Evita Crashes)
-        val opciones = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(archivoImagen.absolutePath, opciones)
-
-        var inSampleSize = 1
-        val maxDim = 800
-        if (opciones.outHeight > maxDim || opciones.outWidth > maxDim) {
-            val halfHeight = opciones.outHeight / 2
-            val halfWidth = opciones.outWidth / 2
-            while (halfHeight / inSampleSize >= maxDim && halfWidth / inSampleSize >= maxDim) {
-                inSampleSize *= 2
-            }
-        }
-
-        opciones.inJustDecodeBounds = false
-        opciones.inSampleSize = inSampleSize
-        val originalBitmap = BitmapFactory.decodeFile(archivoImagen.absolutePath, opciones) ?: return@withContext null
-
-        val width = originalBitmap.width
-        val height = originalBitmap.height
-        val pixels = IntArray(width * height)
-        originalBitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        val edgePixels = IntArray(width * height)
-
-        val threshold = 25 // Sensibilidad del trazado blanco
-
-        // 2. Analizar diferencia de luminosidad (Filtro espacial rápido O(n))
-        for (y in 0 until height - 1) {
-            for (x in 0 until width - 1) {
-                val index = y * width + x
-                val p = pixels[index]
-                val pRight = pixels[y * width + (x + 1)]
-                val pBottom = pixels[(y + 1) * width + x]
-
-                // Extraer luminancia
-                val lum = (0.299 * ((p shr 16) and 0xff) + 0.587 * ((p shr 8) and 0xff) + 0.114 * (p and 0xff)).toInt()
-                val lumR = (0.299 * ((pRight shr 16) and 0xff) + 0.587 * ((pRight shr 8) and 0xff) + 0.114 * (pRight and 0xff)).toInt()
-                val lumB = (0.299 * ((pBottom shr 16) and 0xff) + 0.587 * ((pBottom shr 8) and 0xff) + 0.114 * (pBottom and 0xff)).toInt()
-
-                val diffX = Math.abs(lum - lumR)
-                val diffY = Math.abs(lum - lumB)
-
-                // Si hay diferencia alta, dibujamos contorno blanco; si no, negro.
-                if (diffX > threshold || diffY > threshold) {
-                    edgePixels[index] = android.graphics.Color.WHITE
-                } else {
-                    edgePixels[index] = android.graphics.Color.BLACK
+        val jsonRoot = JSONObject().apply {
+            put("precision_angular", precision)
+            put("resolucion_secantes_n", resolucion)
+            val array = JSONArray()
+            for (m in muestras) {
+                val obj = JSONObject().apply {
+                    put("angulo", m.angulo)
+                    val lines = JSONArray()
+                    for (l in m.lineas) {
+                        lines.put(JSONObject().apply {
+                            put("y_relativo", String.format("%.3f", l.yRelativo).toDouble())
+                            put("inicio_x", String.format("%.3f", l.inicioX).toDouble())
+                            put("longitud", String.format("%.3f", l.longitud).toDouble())
+                        })
+                    }
+                    put("lineas", lines)
                 }
+                array.put(obj)
             }
+            put("muestras", array)
         }
-
-        val contornoBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        contornoBitmap.setPixels(edgePixels, 0, width, 0, 0, width, height)
-
-        // 3. Sobrescribir y guardar
-        val out = FileOutputStream(archivoImagen)
-        contornoBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        out.flush()
-        out.close()
-
-        return@withContext Uri.fromFile(archivoImagen).toString()
-    } catch (e: Exception) {
-        Log.e("Scanner3D", "Error procesando contorno: ${e.message}")
-        return@withContext null
-    }
-}
-// --------------------------------------------------------------------------------
-
-@Composable
-fun GraficoSensorNativo(puntos: List<Triple<Float, Float, Float>>, rangoMax: Float, maxPuntos: Int) {
-    Canvas(modifier = Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFF9F9F9))) {
-        val anchoTotal = size.width
-        val altoTotal = size.height
-        val centroY = altoTotal / 2f
-        val escalaY = (altoTotal / 2f) / rangoMax
-        val distancia = anchoTotal / (maxPuntos - 1)
-
-        drawLine(Color(0xFFE0E0E0), Offset(0f, centroY), Offset(anchoTotal, centroY), 2f)
-        if (puntos.size > 1) {
-            for (i in 0 until puntos.size - 1) {
-                val x1 = i * distancia
-                val x2 = (i + 1) * distancia
-                drawLine(Color(0xFFE53935), Offset(x1, centroY - (puntos[i].first * escalaY)), Offset(x2, centroY - (puntos[i + 1].first * escalaY)), 4f)
-                drawLine(Color(0xFF4CAF50), Offset(x1, centroY - (puntos[i].second * escalaY)), Offset(x2, centroY - (puntos[i + 1].second * escalaY)), 4f)
-                drawLine(Color(0xFF1E88E5), Offset(x1, centroY - (puntos[i].third * escalaY)), Offset(x2, centroY - (puntos[i + 1].third * escalaY)), 4f)
-            }
-        }
-    }
+        val fileName = "escaneo_${System.currentTimeMillis()}.json"
+        val file = File(context.filesDir, fileName)
+        FileOutputStream(file).use { it.write(jsonRoot.toString().toByteArray()) }
+        val fecha = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        escaneoDao.insertar(Escaneo3D(nombre = "Modelo 3D ($precision°)", fecha = fecha, imagenUri = file.absolutePath))
+    } catch (e: Exception) { Log.e("Scanner3D", "Error", e) }
 }
 
 @Composable
-fun VistaCamara(
-    modifier: Modifier = Modifier,
-    onImageCaptureReady: (ImageCapture) -> Unit
-) {
+fun VistaCamara(modifier: Modifier = Modifier, onImageCaptureReady: (ImageCapture) -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-
-    AndroidView(
-        factory = { ctx ->
-            val previewView = PreviewView(ctx)
-            val executor = ContextCompat.getMainExecutor(ctx)
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-
-                val imageCapture = ImageCapture.Builder().build()
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
-                    onImageCaptureReady(imageCapture)
-                } catch (exc: Exception) {
-                    Log.e("CameraX", "Error", exc)
-                }
-            }, executor)
-            previewView
-        },
-        modifier = modifier
-    )
+    AndroidView(factory = { ctx ->
+        val previewView = PreviewView(ctx)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+            val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+            val imageCapture = ImageCapture.Builder().build()
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
+                onImageCaptureReady(imageCapture)
+            } catch (exc: Exception) { Log.e("CameraX", "Error", exc) }
+        }, ContextCompat.getMainExecutor(ctx))
+        previewView
+    }, modifier = modifier)
 }
