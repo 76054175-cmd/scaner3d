@@ -1,8 +1,11 @@
 package com.conti.scaner3d.PantallasOperacion
 
+import android.content.Context
 import android.net.Uri
-import android.widget.ImageView
+import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,12 +27,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.conti.scaner3d.baseDatosLocal.Escaneo3D
 import com.conti.scaner3d.baseDatosLocal.EscaneoDao
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,214 +44,167 @@ fun HistorialScreen(
     escaneoDao: EscaneoDao,
     onNavigate: (String) -> Unit = {}
 ) {
-    val selectedItem = 2
-    val bottomNavItems = listOf("Inicio", "Escanear", "Historial", "Perfil")
-    val bottomNavIcons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.BookmarkBorder, Icons.Default.Person)
-
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-
     var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
 
-    // Estados para el Visor de Imagen y Edición
-    var mostrarVisorImagen by remember { mutableStateOf(false) }
-    var mostrarDialogoEdicion by remember { mutableStateOf(false) }
-    var escaneoSeleccionado by remember { mutableStateOf<Escaneo3D?>(null) }
-    var nombreEditado by remember { mutableStateOf("") }
-
-    // Cargar historial al iniciar
-    LaunchedEffect(Unit) {
-        historyModels = escaneoDao.obtenerTodos()
+    // Función para recargar
+    val cargarDatos = {
+        coroutineScope.launch {
+            historyModels = escaneoDao.obtenerTodos()
+        }
     }
 
-    // --- 1. VISOR DE IMAGEN A PANTALLA COMPLETA ---
-    if (mostrarVisorImagen && escaneoSeleccionado != null) {
-        Dialog(
-            onDismissRequest = { mostrarVisorImagen = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false) // Ocupa toda la pantalla
-        ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Barra superior del Visor
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { mostrarVisorImagen = false }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Volver", tint = Color.White)
-                        }
+    LaunchedEffect(Unit) { cargarDatos() }
 
-                        Text(
-                            text = escaneoSeleccionado!!.nombre,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp)
-                        )
-
-                        Row {
-                            IconButton(onClick = {
-                                nombreEditado = escaneoSeleccionado!!.nombre
-                                mostrarDialogoEdicion = true
-                            }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.White)
-                            }
-                            IconButton(onClick = {
-                                coroutineScope.launch {
-                                    escaneoDao.eliminar(escaneoSeleccionado!!)
-                                    historyModels = escaneoDao.obtenerTodos()
-                                    mostrarVisorImagen = false
-                                    Toast.makeText(context, "Escaneo eliminado", Toast.LENGTH_SHORT).show()
-                                }
-                            }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Red)
-                            }
-                        }
-                    }
-
-                    // Imagen del Contorno (Muestra la imagen procesada de la base de datos)
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        AndroidView(
-                            factory = { ctx ->
-                                ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
-                            },
-                            update = { imageView ->
-                                try {
-                                    imageView.setImageURI(Uri.parse(escaneoSeleccionado!!.imagenUri))
-                                } catch (e: Exception) {
-                                    imageView.setImageResource(android.R.drawable.ic_menu_report_image)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // Fecha inferior
-                    Text(
-                        text = "Escaneado el: ${escaneoSeleccionado!!.fecha}",
-                        color = Color.LightGray,
-                        modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally)
-                    )
+    // Launcher para IMPORTAR (.conti)
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            coroutineScope.launch {
+                val success = importarArchivoConti(context, it, escaneoDao)
+                if (success) {
+                    Toast.makeText(context, "Modelo .conti importado con éxito", Toast.LENGTH_SHORT).show()
+                    cargarDatos()
+                } else {
+                    Toast.makeText(context, "Error al importar archivo", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
-    // --- 2. CUADRO DE DIÁLOGO PARA EDITAR NOMBRE ---
-    if (mostrarDialogoEdicion && escaneoSeleccionado != null) {
-        AlertDialog(
-            onDismissRequest = { mostrarDialogoEdicion = false },
-            title = { Text("Renombrar Modelo", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = nombreEditado,
-                    onValueChange = { nombreEditado = it },
-                    label = { Text("Nombre del Escaneo") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            val actualizado = escaneoSeleccionado!!.copy(nombre = nombreEditado)
-                            escaneoDao.actualizar(actualizado)
-                            historyModels = escaneoDao.obtenerTodos()
-                            escaneoSeleccionado = actualizado // Actualiza el título en el Visor
-                            mostrarDialogoEdicion = false
-                            Toast.makeText(context, "Nombre actualizado", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                ) { Text("Guardar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { mostrarDialogoEdicion = false }) { Text("Cancelar") }
-            }
-        )
-    }
-
-    // --- 3. PANTALLA PRINCIPAL (GRILLA DE HISTORIAL) ---
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.Explore, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Scanner 3D", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                title = { Text("Mis Modelos 3D", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = { importLauncher.launch("*/*") }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Importar .conti")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1976D2))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1976D2), titleContentColor = Color.White, actionIconContentColor = Color.White)
             )
         },
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
-                bottomNavItems.forEachIndexed { index, item ->
+                val items = listOf("Inicio", "Escanear", "Historial")
+                val icons = listOf(Icons.Default.Home, Icons.Default.PhotoCamera, Icons.Default.History)
+                items.forEach { item ->
                     NavigationBarItem(
-                        icon = { Icon(bottomNavIcons[index], contentDescription = item) },
+                        icon = { Icon(icons[items.indexOf(item)], contentDescription = item) },
                         label = { Text(item) },
-                        selected = selectedItem == index,
-                        onClick = {
-                            if (item != "Historial") onNavigate(item)
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF1976D2), selectedTextColor = Color(0xFF1976D2),
-                            unselectedIconColor = Color.Gray, unselectedTextColor = Color.Gray, indicatorColor = Color.Transparent
-                        )
+                        selected = item == "Historial",
+                        onClick = { if (item != "Historial") onNavigate(item) }
                     )
                 }
             }
-        },
-        containerColor = MaterialTheme.colorScheme.background
+        }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).fillMaxSize().padding(horizontal = 16.dp)) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Historial", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = Color.Black)
-            Text("Tienes ${historyModels.size} modelos guardados", style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
-            Spacer(modifier = Modifier.height(24.dp))
-
+        Column(modifier = Modifier.padding(innerPadding).fillMaxSize().padding(16.dp)) {
             if (historyModels.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No hay escaneos guardados.", color = Color.Gray)
+                    Text("No hay modelos guardados.", color = Color.Gray)
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxSize()
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(historyModels) { model ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    // Al hacer clic, navega al Visualizador 3D usando la ruta del JSON
-                                    onNavigate("VisualizarModelo/${model.imagenUri}")
+                        ModelCard(
+                            model = model,
+                            onView = { onNavigate("VisualizarModelo/${model.imagenUri}") },
+                            onExport = {
+                                coroutineScope.launch {
+                                    exportarArchivoConti(context, model)
                                 }
-                        ) {
-                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1976D2).copy(alpha = 0.1f))) {
-                                // Icono representativo de 3D/Wireframe
-                                Icon(
-                                    imageVector = Icons.Default.ViewInAr,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp).align(Alignment.Center),
-                                    tint = Color(0xFF1976D2)
-                                )
-                                Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color(0xFF4CAF50))) // Indicador verde
+                            },
+                            onDelete = {
+                                coroutineScope.launch {
+                                    escaneoDao.eliminar(model)
+                                    cargarDatos()
+                                    Toast.makeText(context, "Modelo eliminado", Toast.LENGTH_SHORT).show()
+                                }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(model.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(model.fecha, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                        }
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onView() },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(2.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1.2f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1976D2).copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color(0xFF1976D2))
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(model.nombre, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(model.fecha, fontSize = 10.sp, color = Color.Gray)
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = onExport) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "Exportar", tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Red, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+    }
+}
+
+suspend fun exportarArchivoConti(context: Context, model: Escaneo3D) = withContext(Dispatchers.IO) {
+    try {
+        val originalFile = File(model.imagenUri)
+        if (!originalFile.exists()) return@withContext
+        
+        val exportName = model.nombre.replace(" ", "_") + ".conti"
+        val downloadsDir = File(context.getExternalFilesDir(null), "Exports")
+        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+        
+        val exportFile = File(downloadsDir, exportName)
+        originalFile.copyTo(exportFile, overwrite = true)
+        
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, "Exportado a: ${exportFile.name}", Toast.LENGTH_LONG).show()
+        }
+    } catch (e: Exception) {
+        Log.e("Historial", "Error export", e)
+    }
+}
+
+suspend fun importarArchivoConti(context: Context, uri: Uri, dao: EscaneoDao): Boolean = withContext(Dispatchers.IO) {
+    try {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext false
+        val fileName = "imported_${System.currentTimeMillis()}.json"
+        val destFile = File(context.filesDir, fileName)
+        
+        FileOutputStream(destFile).use { output ->
+            inputStream.copyTo(output)
+        }
+        
+        val fecha = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        dao.insertar(Escaneo3D(nombre = "Importado .conti", fecha = fecha, imagenUri = destFile.absolutePath))
+        true
+    } catch (e: Exception) {
+        Log.e("Historial", "Error import", e)
+        false
     }
 }

@@ -109,7 +109,6 @@ class MainActivity : ComponentActivity() {
                                 usuarioDao = usuarioDao,
                                 isDarkMode = isDarkMode,
                                 onThemeChange = { nuevoEstado: Boolean -> isDarkMode = nuevoEstado },
-                                onReturnHome = { pantallaActual = "Inicio" },
                                 onCerrarSesion = {
                                     usuarioLogueado = ""
                                     pantallaActual = "login"

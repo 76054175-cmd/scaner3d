@@ -96,6 +96,10 @@ fun cargarLineasDesdeJSON(path: String): List<Pair<Punto3D, Punto3D>> {
         val json = JSONObject(file.readText())
         val muestras = json.getJSONArray("muestras")
         
+        // Cargar escalas (con fallback a 1.0 si no existen)
+        val escH = if (json.has("escala_horizontal")) json.getDouble("escala_horizontal").toFloat() else 1.0f
+        val escV = if (json.has("escala_vertical")) json.getDouble("escala_vertical").toFloat() else 1.0f
+        
         for (i in 0 until muestras.length()) {
             val muestra = muestras.getJSONObject(i)
             val anguloDeg = muestra.getInt("angulo")
@@ -104,19 +108,16 @@ fun cargarLineasDesdeJSON(path: String): List<Pair<Punto3D, Punto3D>> {
             
             for (j in 0 until lineasArray.length()) {
                 val l = lineasArray.getJSONObject(j)
-                val yRel = l.getDouble("y_relativo").toFloat() - 0.5f // Centrar Y
-                val inicioX = l.getDouble("inicio_x").toFloat() - 0.5f // Centrar X respecto al eje
-                val longitud = l.getDouble("longitud").toFloat()
+                val yRel = (l.getDouble("y_relativo").toFloat() - 0.5f) * escV
+                val inicioX = (l.getDouble("inicio_x").toFloat() - 0.5f) * escH
+                val longitud = l.getDouble("longitud").toFloat() * escH
                 
-                // Definimos el segmento en el plano local del ángulo
                 val x1Local = inicioX
                 val x2Local = inicioX + longitud
                 
-                // Rotamos el segmento 3D según el ángulo de captura
-                // El segmento es horizontal en la foto, por lo que varía en el eje perpendicular a la vista
                 val p1 = Punto3D(
                     x = x1Local * cos(anguloRad),
-                    y = -yRel, // Invertir Y para coordenadas de pantalla
+                    y = -yRel,
                     z = x1Local * sin(anguloRad)
                 )
                 val p2 = Punto3D(
