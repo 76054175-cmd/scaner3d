@@ -18,8 +18,10 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,7 +34,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -52,8 +57,10 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.pow
+import kotlin.math.sqrt
 
-// Estructuras de datos para el muestreo
+// Estructuras de datos
 data class MuestraLinea(val yRelativo: Float, val inicioX: Float, val longitud: Float)
 data class MuestraAngulo(val angulo: Int, val lineas: List<MuestraLinea>)
 
@@ -65,7 +72,6 @@ fun EscanearScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Permisos
     var tienePermisoCamara by remember {
@@ -73,47 +79,34 @@ fun EscanearScreen(
     }
     val pedirPermisoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tienePermisoCamara = it }
 
-    // ESTADOS DE CONFIGURACIÓN Y PROCESO
-    var faseEscaneo by remember { mutableStateOf("CONFIGURACION") } // CONFIGURACION, CALIBRACION, CAPTURA, FINALIZADO
+    // ESTADOS DE CONFIGURACIÓN
+    var faseEscaneo by remember { mutableStateOf("CONFIGURACION") } 
     var precisionAngular by remember { mutableIntStateOf(20) }
     var resolucionSecantes by remember { mutableIntStateOf(100) }
     var colorFondoRef by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
+    var umbralTolerancia by remember { mutableFloatStateOf(50f) }
     
     // ESTADOS DE CAPTURA
     var anguloActual by remember { mutableIntStateOf(0) }
-    var muestrasCapturadas = remember { mutableStateListOf<MuestraAngulo>() }
+    val muestrasCapturadas = remember { mutableStateListOf<MuestraAngulo>() }
     var procesandoImagen by remember { mutableStateOf(false) }
     var imageCaptureUseCase by remember { mutableStateOf<ImageCapture?>(null) }
-
-    val totalFotos = 360 / precisionAngular
+    
+    // ESTADO DE REVISIÓN
+    var ultimoBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Escáner 3D - Silhouette", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text("Escáner 3D - Pipeline", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ComposeColor(0xFF1976D2), titleContentColor = ComposeColor.White)
             )
-        },
-        bottomBar = {
-            NavigationBar(containerColor = ComposeColor.White) {
-                val items = listOf("Inicio", "Escanear", "Historial")
-                val icons = listOf(Icons.Default.Home, Icons.Default.Search, Icons.Default.History)
-                items.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        icon = { Icon(icons[index], contentDescription = item) },
-                        label = { Text(item) },
-                        selected = item == "Escanear",
-                        onClick = { if (item != "Escanear") onNavigate(item) }
-                    )
-                }
-            }
         }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -138,7 +131,7 @@ fun EscanearScreen(
                                 faseEscaneo = "CAPTURA"
                                 procesandoImagen = false
                             }, onError = {
-                                Toast.makeText(context, "Error en calibración", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Error calibración", Toast.LENGTH_SHORT).show()
                                 procesandoImagen = false
                             })
                         },
@@ -148,35 +141,45 @@ fun EscanearScreen(
                 "CAPTURA" -> {
                     CapturaPorAngulos(
                         anguloActual = anguloActual,
-                        totalFotos = totalFotos,
+                        totalFotos = 360 / precisionAngular,
                         precision = precisionAngular,
                         procesando = procesandoImagen,
                         tienePermiso = tienePermisoCamara,
-                        colorReferencia = colorFondoRef,
                         onCapture = {
                             procesandoImagen = true
-                            capturarYProcesar(
-                                context, imageCaptureUseCase, anguloActual, resolucionSecantes, colorFondoRef!!,
-                                onResult = { muestra ->
-                                    muestrasCapturadas.add(muestra)
-                                    if (anguloActual + precisionAngular >= 360) {
-                                        coroutineScope.launch {
-                                            guardarResultadoFinal(context, muestrasCapturadas, precisionAngular, resolucionSecantes, escaneoDao)
-                                            faseEscaneo = "FINALIZADO"
-                                            procesandoImagen = false
-                                        }
-                                    } else {
-                                        anguloActual += precisionAngular
-                                        procesandoImagen = false
-                                    }
-                                },
-                                onError = {
-                                    Toast.makeText(context, "Error en captura", Toast.LENGTH_SHORT).show()
-                                    procesandoImagen = false
-                                }
-                            )
+                            capturarOriginal(context, imageCaptureUseCase, onResult = { bitmap ->
+                                ultimoBitmap = bitmap
+                                faseEscaneo = "REVISION"
+                                procesandoImagen = false
+                            }, onError = {
+                                Toast.makeText(context, "Error captura", Toast.LENGTH_SHORT).show()
+                                procesandoImagen = false
+                            })
                         },
                         onImageCaptureReady = { imageCaptureUseCase = it }
+                    )
+                }
+                "REVISION" -> {
+                    RevisionPipeline(
+                        bitmap = ultimoBitmap!!,
+                        colorFondo = colorFondoRef!!,
+                        umbral = umbralTolerancia,
+                        onUmbralChange = { umbralTolerancia = it },
+                        resolucion = resolucionSecantes,
+                        angulo = anguloActual,
+                        onRetake = { faseEscaneo = "CAPTURA" },
+                        onConfirm = { muestra ->
+                            muestrasCapturadas.add(muestra)
+                            if (anguloActual + precisionAngular >= 360) {
+                                coroutineScope.launch {
+                                    guardarResultadoFinal(context, muestrasCapturadas, precisionAngular, resolucionSecantes, escaneoDao)
+                                    faseEscaneo = "FINALIZADO"
+                                }
+                            } else {
+                                anguloActual += precisionAngular
+                                faseEscaneo = "CAPTURA"
+                            }
+                        }
                     )
                 }
                 "FINALIZADO" -> {
@@ -184,14 +187,186 @@ fun EscanearScreen(
                         faseEscaneo = "CONFIGURACION"
                         muestrasCapturadas.clear()
                         anguloActual = 0
-                        colorFondoRef = null
-                    }, onVerModelo = {
-                        onNavigate("Historial") // O una ruta específica si se implementa
-                    })
+                    }, onVerModelo = { onNavigate("Historial") })
                 }
             }
         }
     }
+}
+
+@Composable
+fun RevisionPipeline(
+    bitmap: Bitmap,
+    colorFondo: Triple<Int, Int, Int>,
+    umbral: Float,
+    onUmbralChange: (Float) -> Unit,
+    resolucion: Int,
+    angulo: Int,
+    onRetake: () -> Unit,
+    onConfirm: (MuestraAngulo) -> Unit
+) {
+    var viewMode by remember { mutableIntStateOf(0) } // 0: Original, 1: Filtro Fondo, 2: Contorno/Muestreo
+    
+    // Procesar imágenes según umbral actual
+    val result = remember(umbral, resolucion) {
+        procesarPipeline(bitmap, colorFondo, umbral, resolucion, angulo)
+    }
+
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Revisión Angulo $angulo°", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Selector de Vista
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    FilterChip(selected = viewMode == 0, onClick = { viewMode = 0 }, label = { Text("Original") })
+                    FilterChip(selected = viewMode == 1, onClick = { viewMode = 1 }, label = { Text("Fondo") })
+                    FilterChip(selected = viewMode == 2, onClick = { viewMode = 2 }, label = { Text("Muestreo") })
+                }
+
+                Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
+                    val displayBitmap = when(viewMode) {
+                        0 -> bitmap
+                        1 -> result.bitmapFondo
+                        else -> result.bitmapContorno
+                    }
+                    Image(bitmap = displayBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    
+                    if (viewMode == 2) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            result.muestra.lineas.forEach { linea ->
+                                val y = linea.yRelativo * size.height
+                                drawLine(ComposeColor.Cyan, Offset(linea.inicioX * size.width, y), Offset((linea.inicioX + linea.longitud) * size.width, y), 2f)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Calibración de Filtro", fontWeight = FontWeight.SemiBold)
+                Text("Umbral de Tolerancia: ${umbral.toInt()}", fontSize = 12.sp)
+                Slider(value = umbral, onValueChange = onUmbralChange, valueRange = 10f..150f)
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) { Text("Repetir") }
+                    Button(onClick = { onConfirm(result.muestra) }, modifier = Modifier.weight(1f)) { Text("Confirmar") }
+                }
+            }
+        }
+    }
+}
+
+data class PipelineResult(val bitmapFondo: Bitmap, val bitmapContorno: Bitmap, val muestra: MuestraAngulo)
+
+fun procesarPipeline(bitmap: Bitmap, colorFondo: Triple<Int, Int, Int>, umbral: Float, n: Int, angulo: Int): PipelineResult {
+    val width = bitmap.width
+    val height = bitmap.height
+    val (refR, refG, refB) = colorFondo
+    
+    val fondoBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val contornoBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val lineas = mutableListOf<MuestraLinea>()
+
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val fondoPixels = IntArray(width * height)
+    val contornoPixels = IntArray(width * height)
+
+    // Paso de muestreo vertical basado en la resolución n
+    val stepY = (height / n).coerceAtLeast(1)
+
+    for (y in 0 until height) {
+        var xMin = -1
+        var xMax = -1
+        
+        for (x in 0 until width) {
+            val idx = y * width + x
+            val p = pixels[idx]
+            
+            // FILTRO 1: Distancia euclidiana de color respecto al fondo calibrado
+            val dr = (Color.red(p) - refR).toDouble()
+            val dg = (Color.green(p) - refG).toDouble()
+            val db = (Color.blue(p) - refB).toDouble()
+            val diff = sqrt(dr*dr + dg*dg + db*db)
+
+            if (diff > umbral) {
+                // Es parte del objeto
+                fondoPixels[idx] = p 
+                if (xMin == -1) xMin = x
+                xMax = x
+            } else {
+                // Es fondo
+                fondoPixels[idx] = Color.BLACK
+            }
+        }
+        
+        // FILTRO 2: Crear Silueta Sólida (ignora detalles internos)
+        // Si encontramos un inicio y un fin, rellenamos todo el medio en el mapa de contorno
+        if (xMin != -1 && xMax != -1) {
+            for (x in xMin..xMax) {
+                contornoPixels[y * width + x] = Color.WHITE
+            }
+            
+            // MUESTREO: Solo si toca procesar esta línea según n
+            if (y % stepY == 0) {
+                lineas.add(MuestraLinea(
+                    yRelativo = y.toFloat() / height,
+                    inicioX = xMin.toFloat() / width,
+                    longitud = (xMax - xMin).toFloat() / width
+                ))
+            }
+        }
+    }
+
+    fondoBitmap.setPixels(fondoPixels, 0, width, 0, 0, width, height)
+    contornoBitmap.setPixels(contornoPixels, 0, width, 0, 0, width, height)
+
+    return PipelineResult(fondoBitmap, contornoBitmap, MuestraAngulo(angulo, lineas))
+}
+
+@Composable
+fun VistaCamara(modifier: Modifier = Modifier, onImageCaptureReady: (ImageCapture) -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    Box(modifier = modifier) {
+        AndroidView(factory = { ctx ->
+            val previewView = PreviewView(ctx)
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                val imageCapture = ImageCapture.Builder().build()
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
+                    onImageCaptureReady(imageCapture)
+                } catch (e: Exception) { Log.e("Camera", "Error", e) }
+            }, ContextCompat.getMainExecutor(ctx))
+            previewView
+        }, modifier = Modifier.fillMaxSize())
+        
+        // Indicador de eje central
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerX = size.width / 2
+            drawLine(ComposeColor.Red.copy(alpha = 0.5f), Offset(centerX, 0f), Offset(centerX, size.height), 2f)
+            // Marcas de encuadre
+            drawLine(ComposeColor.White, Offset(centerX - 40, size.height * 0.2f), Offset(centerX + 40, size.height * 0.2f), 4f)
+            drawLine(ComposeColor.White, Offset(centerX - 40, size.height * 0.8f), Offset(centerX + 40, size.height * 0.8f), 4f)
+        }
+    }
+}
+
+// Funciones auxiliares simplificadas
+fun capturarOriginal(context: Context, imageCapture: ImageCapture?, onResult: (Bitmap) -> Unit, onError: () -> Unit) {
+    if (imageCapture == null) { onError(); return }
+    val file = File(context.cacheDir, "original.jpg")
+    imageCapture.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+            BitmapFactory.decodeFile(file.absolutePath)?.let { onResult(it) } ?: onError()
+        }
+        override fun onError(exc: ImageCaptureException) = onError()
+    })
 }
 
 @Composable
@@ -223,7 +398,6 @@ fun CalibracionFondo(procesando: Boolean, tienePermiso: Boolean, onCalibrate: ()
             Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
                 if (tienePermiso) {
                     VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
-                    // Punto de mira central
                     Box(modifier = Modifier.size(20.dp).border(2.dp, ComposeColor.White, CircleShape).align(Alignment.Center))
                 }
                 if (procesando) {
@@ -241,19 +415,11 @@ fun CalibracionFondo(procesando: Boolean, tienePermiso: Boolean, onCalibrate: ()
 }
 
 @Composable
-fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, colorReferencia: Triple<Int, Int, Int>?, onCapture: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
+fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, onCapture: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
     val fotoNumero = (anguloActual / precision) + 1
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White)) {
         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Paso $fotoNumero de $totalFotos", fontWeight = FontWeight.Bold, color = ComposeColor(0xFF1976D2))
-                Spacer(modifier = Modifier.weight(1f))
-                colorReferencia?.let { (r,g,b) ->
-                    Box(modifier = Modifier.size(24.dp).background(ComposeColor(r, g, b), CircleShape).border(1.dp, ComposeColor.Gray, CircleShape))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Fondo", fontSize = 10.sp)
-                }
-            }
+            Text("Paso $fotoNumero de $totalFotos", fontWeight = FontWeight.Bold, color = ComposeColor(0xFF1976D2))
             Text("Gira el objeto a: $anguloActual°", fontSize = 24.sp, fontWeight = FontWeight.Black)
             Spacer(modifier = Modifier.height(16.dp))
             Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
@@ -280,20 +446,15 @@ fun ResultadoFinal(onReset: () -> Unit, onVerModelo: () -> Unit) {
         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ComposeColor(0xFF4CAF50), modifier = Modifier.size(100.dp))
         Text("¡Escaneo Completado!", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onVerModelo, modifier = Modifier.fillMaxWidth()) {
-            Text("Ver en Historial")
-        }
-        OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
-            Text("Nuevo Escaneo")
-        }
+        Button(onClick = onVerModelo, modifier = Modifier.fillMaxWidth()) { Text("Ver en Historial") }
+        OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Nuevo Escaneo") }
     }
 }
 
 fun capturarYCalibrarColor(context: Context, imageCapture: ImageCapture?, onResult: (Triple<Int, Int, Int>) -> Unit, onError: () -> Unit) {
     if (imageCapture == null) { onError(); return }
     val file = File(context.cacheDir, "calibration.jpg")
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
-    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
+    imageCapture.takePicture(ImageCapture.OutputFileOptions.Builder(file).build(), ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath)
             if (bitmap != null) {
@@ -303,52 +464,6 @@ fun capturarYCalibrarColor(context: Context, imageCapture: ImageCapture?, onResu
         }
         override fun onError(exc: ImageCaptureException) = onError()
     })
-}
-
-fun capturarYProcesar(context: Context, imageCapture: ImageCapture?, angulo: Int, n: Int, colorFondo: Triple<Int, Int, Int>, onResult: (MuestraAngulo) -> Unit, onError: () -> Unit) {
-    if (imageCapture == null) { onError(); return }
-    val file = File(context.cacheDir, "temp_$angulo.jpg")
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
-    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageSavedCallback {
-        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            if (bitmap != null) {
-                onResult(extraerMuestrasSilueta(bitmap, angulo, n, colorFondo))
-            } else onError()
-        }
-        override fun onError(exc: ImageCaptureException) = onError()
-    })
-}
-
-fun extraerMuestrasSilueta(bitmap: Bitmap, angulo: Int, n: Int, colorFondo: Triple<Int, Int, Int>): MuestraAngulo {
-    val (refR, refG, refB) = colorFondo
-    val width = bitmap.width
-    val height = bitmap.height
-    val lineas = mutableListOf<MuestraLinea>()
-    val umbralTolerancia = 50.0
-
-    for (i in 0 until n) {
-        val yRelativo = i.toFloat() / n
-        val yPixel = (yRelativo * height).toInt().coerceIn(0, height - 1)
-        var xInicio = -1
-        var xFin = -1
-        for (x in 0 until width) {
-            val pixel = bitmap.getPixel(x, yPixel)
-            val diff = Math.sqrt(
-                Math.pow((Color.red(pixel) - refR).toDouble(), 2.0) +
-                Math.pow((Color.green(pixel) - refG).toDouble(), 2.0) +
-                Math.pow((Color.blue(pixel) - refB).toDouble(), 2.0)
-            )
-            if (diff > umbralTolerancia) {
-                if (xInicio == -1) xInicio = x
-                xFin = x
-            }
-        }
-        if (xInicio != -1) {
-            lineas.add(MuestraLinea(yRelativo, xInicio.toFloat() / width, (xFin - xInicio).toFloat() / width))
-        }
-    }
-    return MuestraAngulo(angulo, lineas)
 }
 
 suspend fun guardarResultadoFinal(context: Context, muestras: List<MuestraAngulo>, precision: Int, resolucion: Int, escaneoDao: EscaneoDao) = withContext(Dispatchers.IO) {
@@ -380,25 +495,4 @@ suspend fun guardarResultadoFinal(context: Context, muestras: List<MuestraAngulo
         val fecha = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
         escaneoDao.insertar(Escaneo3D(nombre = "Modelo 3D ($precision°)", fecha = fecha, imagenUri = file.absolutePath))
     } catch (e: Exception) { Log.e("Scanner3D", "Error", e) }
-}
-
-@Composable
-fun VistaCamara(modifier: Modifier = Modifier, onImageCaptureReady: (ImageCapture) -> Unit) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val context = LocalContext.current
-    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    AndroidView(factory = { ctx ->
-        val previewView = PreviewView(ctx)
-        cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-            val imageCapture = ImageCapture.Builder().build()
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
-                onImageCaptureReady(imageCapture)
-            } catch (exc: Exception) { Log.e("CameraX", "Error", exc) }
-        }, ContextCompat.getMainExecutor(ctx))
-        previewView
-    }, modifier = modifier)
 }
