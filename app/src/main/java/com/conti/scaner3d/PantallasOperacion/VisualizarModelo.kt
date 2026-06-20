@@ -2,19 +2,26 @@ package com.conti.scaner3d.PantallasOperacion
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.cos
@@ -30,21 +37,55 @@ fun VisualizarModeloScreen(
 ) {
     var rotX by remember { mutableFloatStateOf(0f) }
     var rotY by remember { mutableFloatStateOf(0f) }
+    var autoRotar by remember { mutableStateOf(true) }
+    var velocidadRotacion by remember { mutableFloatStateOf(1.0f) }
+    var colorLineas by remember { mutableStateOf(Color.Cyan) }
+    var mostrarAjustes by remember { mutableStateOf(false) }
+    
     val escala = 400f
+    val primaryBlue = Color(0xFF0D47A1)
 
     val lineas3D = remember(jsonPath) {
         cargarLineasDesdeJSON(jsonPath)
     }
 
+    // Rotación automática
+    LaunchedEffect(autoRotar, velocidadRotacion) {
+        if (autoRotar) {
+            while (true) {
+                rotY += velocidadRotacion
+                kotlinx.coroutines.delay(16)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Visualizador Wireframe 3D", fontWeight = FontWeight.Bold) },
+                title = { 
+                    Column {
+                        Text("VISUALIZADOR 3D", fontWeight = FontWeight.Black, fontSize = 16.sp, letterSpacing = 1.sp)
+                        Text("Explora el modelo digital", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
                     }
-                }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { mostrarAjustes = !mostrarAjustes },
+                        modifier = Modifier.background(if (mostrarAjustes) primaryBlue.copy(alpha = 0.1f) else Color.Transparent, CircleShape)
+                    ) {
+                        Icon(
+                            if (mostrarAjustes) Icons.Default.Close else Icons.Default.Settings, 
+                            contentDescription = "Ajustes",
+                            tint = if (mostrarAjustes) primaryBlue else Color.Black
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { padding ->
@@ -52,13 +93,16 @@ fun VisualizarModeloScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Color(0xFF121212))
+                .background(Color(0xFF0A0A0A))
                 .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        rotY += dragAmount.x * 0.5f
-                        rotX -= dragAmount.y * 0.5f
-                    }
+                    detectDragGestures(
+                        onDragStart = { autoRotar = false },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            rotY += dragAmount.x * 0.5f
+                            rotX -= dragAmount.y * 0.5f
+                        }
+                    )
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -70,18 +114,98 @@ fun VisualizarModeloScreen(
                     val proj2 = proyectar(p2, rotX, rotY, centroX, centroY, escala)
 
                     drawLine(
-                        color = Color.Cyan.copy(alpha = 0.6f),
+                        color = colorLineas.copy(alpha = 0.8f),
                         start = proj1,
                         end = proj2,
-                        strokeWidth = 2f,
+                        strokeWidth = 3f,
                         cap = StrokeCap.Round
                     )
                 }
             }
-            
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Usa un dedo para rotar el modelo", color = Color.White.copy(alpha = 0.7f))
-                Text("Líneas detectadas: ${lineas3D.size}", color = Color.White.copy(alpha = 0.5f))
+
+            // HUD / Indicador de rotación
+            Box(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .align(Alignment.TopEnd)
+                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+            ) {
+                Text(
+                    "Rotación: ${rotY.toInt()}°",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (mostrarAjustes) {
+                ElevatedCard(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.95f))
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text("AJUSTES DE VISTA", fontWeight = FontWeight.Black, fontSize = 12.sp, color = primaryBlue)
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.RotateRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Auto-rotar", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = autoRotar, 
+                                onCheckedChange = { autoRotar = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = primaryBlue)
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Velocidad", fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp))
+                            Slider(
+                                value = velocidadRotacion, 
+                                onValueChange = { velocidadRotacion = it }, 
+                                valueRange = 0.1f..5f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(thumbColor = primaryBlue, activeTrackColor = primaryBlue)
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text("Color del Neón", fontWeight = FontWeight.Medium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            val colores = listOf(Color.Cyan, Color(0xFF00E676), Color.Yellow, Color(0xFFFF5252), Color.White, Color(0xFFD1C4E9))
+                            colores.forEach { color ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .border(if (colorLineas == color) 3.dp else 0.dp, primaryBlue, CircleShape)
+                                        .clickable { colorLineas = color }
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    "Desliza para explorar • Pulsa Ajustes para personalizar",
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 32.dp),
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }

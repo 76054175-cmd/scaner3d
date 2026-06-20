@@ -6,6 +6,10 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -76,7 +80,20 @@ fun EscanearScreen(
     var tienePermisoCamara by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    val pedirPermisoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tienePermisoCamara = it }
+    
+    // Para compartir archivos en Android < 10 o exportar a carpetas públicas se suele requerir WRITE_EXTERNAL_STORAGE,
+    // pero usando el almacenamiento interno o scoped storage de la app no es estrictamente necesario.
+    // Aun así, pediremos los permisos estándar si los declaraste.
+    
+    val pedirPermisoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        tienePermisoCamara = permissions[Manifest.permission.CAMERA] ?: tienePermisoCamara
+    }
+
+    LaunchedEffect(Unit) {
+        if (!tienePermisoCamara) {
+            pedirPermisoLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+        }
+    }
 
     // ESTADOS DE CONFIGURACIÓN
     var faseEscaneo by remember { mutableStateOf("CONFIGURACION") } 
@@ -84,6 +101,9 @@ fun EscanearScreen(
     var resolucionSecantes by remember { mutableIntStateOf(100) }
     var escalaHorizontal by remember { mutableFloatStateOf(1.0f) }
     var escalaVertical by remember { mutableFloatStateOf(1.0f) }
+    
+    var modoAutomatico by remember { mutableStateOf(false) }
+    var intervaloAutomatico by remember { mutableIntStateOf(3) } // Segundos
     
     var colorFondoRef by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
     var umbralTolerancia by remember { mutableFloatStateOf(60f) }
@@ -96,8 +116,38 @@ fun EscanearScreen(
     
     // ESTADO DE REVISIÓN
     var ultimoBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    
+    // ESTADO DE CUENTA REGRESIVA
+    var cuentaRegresiva by remember { mutableIntStateOf(0) }
+    var estaEnCuentaRegresiva by remember { mutableStateOf(false) }
 
-    // Manejo del botón atrás nativo
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
+
+    fun sonarPitido() {
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 200)
+    }
+
+    // Efecto de cuenta regresiva
+    LaunchedEffect(estaEnCuentaRegresiva, cuentaRegresiva) {
+        if (estaEnCuentaRegresiva && cuentaRegresiva > 0) {
+            kotlinx.coroutines.delay(1000)
+            cuentaRegresiva -= 1
+            if (cuentaRegresiva == 0) {
+                estaEnCuentaRegresiva = false
+                // Disparar captura automática
+                procesandoImagen = true
+                capturarOriginal(context, imageCaptureUseCase, onResult = { bitmap ->
+                    ultimoBitmap = bitmap
+                    faseEscaneo = "REVISION"
+                    procesandoImagen = false
+                }, onError = {
+                    Toast.makeText(context, "Error captura automática", Toast.LENGTH_SHORT).show()
+                    procesandoImagen = false
+                })
+            }
+        }
+    }
+    
     BackHandler(faseEscaneo != "CONFIGURACION") {
         when (faseEscaneo) {
             "CALIBRACION" -> faseEscaneo = "CONFIGURACION"
@@ -176,6 +226,10 @@ fun EscanearScreen(
                         onEHorizontalChange = { escalaHorizontal = it },
                         eVertical = escalaVertical,
                         onEVerticalChange = { escalaVertical = it },
+                        modoAuto = modoAutomatico,
+                        onModoAutoChange = { modoAutomatico = it },
+                        intervalo = intervaloAutomatico,
+                        onIntervaloChange = { intervaloAutomatico = it },
                         onStart = { faseEscaneo = "CALIBRACION" }
                     )
                 }
@@ -204,6 +258,7 @@ fun EscanearScreen(
                         precision = precisionAngular,
                         procesando = procesandoImagen,
                         tienePermiso = tienePermisoCamara,
+                        cuentaRegresiva = if (estaEnCuentaRegresiva) cuentaRegresiva else 0,
                         onCapture = {
                             procesandoImagen = true
                             capturarOriginal(context, imageCaptureUseCase, onResult = { bitmap ->
@@ -219,6 +274,7 @@ fun EscanearScreen(
                             faseEscaneo = "CONFIGURACION"
                             muestrasCapturadas.clear()
                             anguloActual = 0
+                            estaEnCuentaRegresiva = false
                         },
                         onImageCaptureReady = { imageCaptureUseCase = it }
                     )
@@ -243,7 +299,14 @@ fun EscanearScreen(
                                 }
                             } else {
                                 anguloActual += precisionAngular
-                                faseEscaneo = "CAPTURA"
+                                if (modoAutomatico) {
+                                    faseEscaneo = "CAPTURA"
+                                    cuentaRegresiva = intervaloAutomatico
+                                    estaEnCuentaRegresiva = true
+                                    sonarPitido()
+                                } else {
+                                    faseEscaneo = "CAPTURA"
+                                }
                             }
                         }
                     )
@@ -266,6 +329,8 @@ fun ConfiguracionInicial(
     resolucion: Int, onResolucionChange: (Int) -> Unit,
     eHorizontal: Float, onEHorizontalChange: (Float) -> Unit,
     eVertical: Float, onEVerticalChange: (Float) -> Unit,
+    modoAuto: Boolean, onModoAutoChange: (Boolean) -> Unit,
+    intervalo: Int, onIntervaloChange: (Int) -> Unit,
     onStart: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White), elevation = CardDefaults.cardElevation(4.dp)) {
@@ -281,11 +346,23 @@ fun ConfiguracionInicial(
             
             Divider(modifier = Modifier.padding(vertical = 8.dp))
             
-            Text("Escala Horizontal: ${String.format("%.2f", eHorizontal)}", fontWeight = FontWeight.Medium)
+            Text("Escala Horizontal: ${String.format(Locale.US, "%.2f", eHorizontal)}", fontWeight = FontWeight.Medium)
             Slider(value = eHorizontal, onValueChange = onEHorizontalChange, valueRange = 0.5f..3.0f)
             
-            Text("Escala Vertical (Separación): ${String.format("%.2f", eVertical)}", fontWeight = FontWeight.Medium)
+            Text("Escala Vertical: ${String.format(Locale.US, "%.2f", eVertical)}", fontWeight = FontWeight.Medium)
             Slider(value = eVertical, onValueChange = onEVerticalChange, valueRange = 0.5f..3.0f)
+
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Modo Automático", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Switch(checked = modoAuto, onCheckedChange = onModoAutoChange)
+            }
+            if (modoAuto) {
+                Text("Intervalo: $intervalo seg", fontWeight = FontWeight.Medium)
+                Slider(value = intervalo.toFloat(), onValueChange = { onIntervaloChange(it.toInt()) }, valueRange = 2f..10f, steps = 8)
+                Text("Se tomará la foto automáticamente tras el pitido.", fontSize = 11.sp, color = ComposeColor.Gray)
+            }
             
             Spacer(modifier = Modifier.height(24.dp))
             Button(onClick = onStart, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) {
@@ -370,7 +447,7 @@ fun RevisionPipeline(
 }
 
 @Composable
-fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, onCapture: () -> Unit, onCancel: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
+fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, cuentaRegresiva: Int, onCapture: () -> Unit, onCancel: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
     val fotoNumero = (anguloActual / precision) + 1
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = ComposeColor.White), elevation = CardDefaults.cardElevation(4.dp)) {
         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -380,6 +457,16 @@ fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, proces
             
             Box(modifier = Modifier.fillMaxWidth().height(350.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
                 if (tienePermiso) VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
+                
+                if (cuentaRegresiva > 0) {
+                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("ROTAR AHORA", color = ComposeColor.Yellow, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("$cuentaRegresiva", color = ComposeColor.White, fontSize = 80.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+
                 if (procesando) {
                     Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = ComposeColor.White)
@@ -388,10 +475,10 @@ fun CapturaPorAngulos(anguloActual: Int, totalFotos: Int, precision: Int, proces
             }
             
             Spacer(modifier = Modifier.height(20.dp))
-            Button(onClick = onCapture, enabled = !procesando, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp)) {
+            Button(onClick = onCapture, enabled = !procesando && cuentaRegresiva == 0, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp)) {
                 Icon(Icons.Default.PhotoCamera, null)
                 Spacer(Modifier.width(8.dp))
-                Text("CAPTURAR", fontWeight = FontWeight.Bold)
+                Text(if (cuentaRegresiva > 0) "ESPERANDO..." else "CAPTURAR", fontWeight = FontWeight.Bold)
             }
             TextButton(onClick = onCancel, modifier = Modifier.padding(top = 8.dp)) {
                 Text("Cancelar Escaneo", color = ComposeColor.Red)

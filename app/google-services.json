@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "916648777079",
+    "project_id": "scaner3d-8f26433e",
+    "storage_bucket": "scaner3d-8f26433e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:916648777079:android:c6b31e53cafd457cd2fd72",
+        "android_client_info": {
+          "package_name": "com.conti.scaner3d"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "916648777079-g3q4qrib9q3gqgfaa1ehp8o6nfi7kjjd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.conti.scaner3d",
+            "certificate_hash": "325b9b5283101c5f07a7f7bfb053ba9e5d2d61db"
+          }
+        },
+        {
+          "client_id": "916648777079-c7o5fh693fi3p74p63s7fvpm73s8ahkn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD46yzgNjY3oK_BVcvaG8GnDaG56b_gfPY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "916648777079-c7o5fh693fi3p74p63s7fvpm73s8ahkn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

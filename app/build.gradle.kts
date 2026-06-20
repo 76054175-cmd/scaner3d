@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.gms.google.services)
 }
 
 android {
@@ -49,8 +50,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.room.runtime)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    implementation(libs.firebase.auth)
+    implementation(libs.googleid)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
@@ -58,8 +64,6 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
     implementation("androidx.compose.material:material-icons-extended")
 
     // 3. Llamas al compilador usando ksp en vez de implementation
@@ -71,4 +75,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:${camerax_version}")
     implementation("androidx.camera:camera-lifecycle:${camerax_version}")
     implementation("androidx.camera:camera-view:${camerax_version}")
+
+    // Firebase
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
 }

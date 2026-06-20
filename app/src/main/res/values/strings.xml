@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">scaner3d</string>
+    <!-- REPLACE WITH YOUR ACTUAL WEB CLIENT ID FROM FIREBASE CONSOLE -->
+    <string name="default_web_client_id">YOUR_WEB_CLIENT_ID.apps.googleusercontent.com</string>
 </resources>

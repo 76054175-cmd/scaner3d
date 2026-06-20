@@ -2,6 +2,7 @@ package com.conti.scaner3d.PantallasOperacion
 
 import android.content.Context
 import android.net.Uri
+import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -21,6 +22,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +51,10 @@ fun HistorialScreen(
     val coroutineScope = rememberCoroutineScope()
     var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
 
+    // Colores consistentes
+    val primaryBlue = Color(0xFF0D47A1)
+    val lightBlue = Color(0xFFE3F2FD)
+
     // Función para recargar
     val cargarDatos = {
         coroutineScope.launch {
@@ -74,39 +81,55 @@ fun HistorialScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Mis Modelos 3D", fontWeight = FontWeight.Bold) },
+            CenterAlignedTopAppBar(
+                title = { Text("MIS MODELOS 3D", fontWeight = FontWeight.Black, letterSpacing = 1.sp) },
                 actions = {
                     IconButton(onClick = { importLauncher.launch("*/*") }) {
-                        Icon(Icons.Default.FileUpload, contentDescription = "Importar .conti")
+                        Icon(Icons.Default.FileUpload, contentDescription = "Importar .conti", tint = primaryBlue)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1976D2), titleContentColor = Color.White, actionIconContentColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = Color.White) {
+            NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
                 val items = listOf("Inicio", "Escanear", "Historial")
                 val icons = listOf(Icons.Default.Home, Icons.Default.PhotoCamera, Icons.Default.History)
                 items.forEach { item ->
                     NavigationBarItem(
                         icon = { Icon(icons[items.indexOf(item)], contentDescription = item) },
-                        label = { Text(item) },
+                        label = { Text(item, fontWeight = FontWeight.Medium) },
                         selected = item == "Historial",
-                        onClick = { if (item != "Historial") onNavigate(item) }
+                        onClick = { if (item != "Historial") onNavigate(item) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = primaryBlue,
+                            indicatorColor = lightBlue
+                        )
                     )
                 }
             }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).fillMaxSize().padding(16.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(listOf(Color.White, lightBlue.copy(alpha = 0.3f))))
+                .padding(innerPadding)
+        ) {
             if (historyModels.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No hay modelos guardados.", color = Color.Gray)
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Default.Inbox, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("No hay modelos guardados todavía.", color = Color.Gray, fontWeight = FontWeight.Medium)
                 }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -116,7 +139,10 @@ fun HistorialScreen(
                             onView = { onNavigate("VisualizarModelo/${model.imagenUri}") },
                             onExport = {
                                 coroutineScope.launch {
-                                    exportarArchivoConti(context, model)
+                                    val exportedFile = exportarArchivoConti(context, model)
+                                    if (exportedFile != null) {
+                                        compartirArchivoConti(context, exportedFile)
+                                    }
                                 }
                             },
                             onDelete = {
@@ -136,57 +162,113 @@ fun HistorialScreen(
 
 @Composable
 fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onView() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(2.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+    val primaryBlue = Color(0xFF0D47A1)
+    
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(4.dp, RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.White)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.clickable { onView() }) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1.2f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF1976D2).copy(alpha = 0.1f)),
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(primaryBlue.copy(alpha = 0.05f), primaryBlue.copy(alpha = 0.2f))
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color(0xFF1976D2))
+                Icon(
+                    imageVector = Icons.Default.ViewInAr,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = primaryBlue
+                )
             }
             
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(model.nombre, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(model.fecha, fontSize = 10.sp, color = Color.Gray)
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onExport) {
-                    Icon(Icons.Default.FileDownload, contentDescription = "Exportar", tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.Red, modifier = Modifier.size(20.dp))
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = model.nombre,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Black
+                )
+                Text(
+                    text = model.fecha,
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onExport,
+                        modifier = Modifier.size(32.dp).background(Color(0xFFE8F5E9), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Compartir", tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp).background(Color(0xFFFFEBEE), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }
     }
 }
 
-suspend fun exportarArchivoConti(context: Context, model: Escaneo3D) = withContext(Dispatchers.IO) {
+suspend fun exportarArchivoConti(context: Context, model: Escaneo3D): File? = withContext(Dispatchers.IO) {
     try {
         val originalFile = File(model.imagenUri)
-        if (!originalFile.exists()) return@withContext
+        if (!originalFile.exists()) return@withContext null
         
         val exportName = model.nombre.replace(" ", "_") + ".conti"
-        val downloadsDir = File(context.getExternalFilesDir(null), "Exports")
-        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+        val exportsDir = File(context.getExternalFilesDir(null), "Exports")
+        if (!exportsDir.exists()) exportsDir.mkdirs()
         
-        val exportFile = File(downloadsDir, exportName)
+        val exportFile = File(exportsDir, exportName)
         originalFile.copyTo(exportFile, overwrite = true)
         
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Exportado a: ${exportFile.name}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Preparado para compartir: ${exportFile.name}", Toast.LENGTH_SHORT).show()
         }
+        exportFile
     } catch (e: Exception) {
         Log.e("Historial", "Error export", e)
+        null
+    }
+}
+
+fun compartirArchivoConti(context: Context, file: File) {
+    try {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "*/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Compartir Modelo Conti"))
+    } catch (e: Exception) {
+        Toast.makeText(context, "Error al compartir: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 
