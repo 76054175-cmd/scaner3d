@@ -75,24 +75,29 @@ class MainActivity : ComponentActivity() {
                         "Inicio" -> {
                             InicioScreen(
                                 usuario = usuarioLogueado,
-                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                                onNavigate = { nuevaPantalla -> pantallaActual = nuevaPantalla },
+                                onNavigateToLogin = {
+                                    // Unificado a "login" (minúsculas) para coincidir con tu ruta inicial
+                                    usuarioLogueado = ""
+                                    pantallaActual = "login"
+                                }
                             )
                         }
                         "Escanear" -> {
                             EscanearScreen(
-                                escaneoDao = escaneoDao, // Instancia vinculada a BD
+                                escaneoDao = escaneoDao,
                                 onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
                             )
                         }
                         "Historial" -> {
                             HistorialScreen(
-                                escaneoDao = escaneoDao, // Instancia vinculada a BD
-                                onNavigate = { nuevaPantalla: String -> 
+                                escaneoDao = escaneoDao,
+                                onNavigate = { nuevaPantalla: String ->
                                     if (nuevaPantalla.startsWith("VisualizarModelo/")) {
                                         jsonPathAVisualizar = nuevaPantalla.removePrefix("VisualizarModelo/")
                                         pantallaActual = "VisualizarModelo"
                                     } else {
-                                        pantallaActual = nuevaPantalla 
+                                        pantallaActual = nuevaPantalla
                                     }
                                 }
                             )

@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-06-14T16:17:23.069316219Z">
+        <DropdownSelection timestamp="2026-06-25T02:15:05.153159700Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=/home/nors/.android/avd/Medium_Phone.avd" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\Gabriel\.android\avd\Xiaomi_Redmi_Note_13_Pro.avd" />
             </handle>
           </Target>
         </DropdownSelection>
