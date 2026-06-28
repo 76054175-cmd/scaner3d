@@ -67,6 +67,7 @@ fun LoginScreen(
             .requestEmail()
             .build()
     }
+    //comentario
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
