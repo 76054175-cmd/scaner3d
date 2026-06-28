@@ -52,11 +52,18 @@ fun HistorialScreen(
     val coroutineScope = rememberCoroutineScope()
     var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
 
+    var consultaBusqueda by remember { mutableStateOf("") }
+    var filtroFecha by remember { mutableStateOf("Todos") }
+
+    var modeloARenombrar by remember { mutableStateOf<Escaneo3D?>(null) }
+    var nuevoNombreInput by remember { mutableStateOf("") }
+
     val primaryBlue = Color(0xFF0D47A1)
     val lightBlue = if (isDarkMode) Color(0xFF1E3A5F) else Color(0xFFE3F2FD)
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color.White
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
 
     val cargarDatos = {
         coroutineScope.launch {
@@ -65,6 +72,21 @@ fun HistorialScreen(
     }
 
     LaunchedEffect(Unit) { cargarDatos() }
+
+    val modelosFiltrados = remember(historyModels, consultaBusqueda, filtroFecha) {
+        val formatoFechaHoy = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+        val formatoEsteMes = SimpleDateFormat("/MM/yyyy", Locale.getDefault()).format(Date())
+
+        historyModels.filter { model ->
+            val coincideNombre = model.nombre.contains(consultaBusqueda, ignoreCase = true)
+            val coincideFecha = when (filtroFecha) {
+                "Hoy" -> model.fecha.startsWith(formatoFechaHoy)
+                "Este Mes" -> model.fecha.contains(formatoEsteMes)
+                else -> true
+            }
+            coincideNombre && coincideFecha
+        }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -78,6 +100,44 @@ fun HistorialScreen(
                 }
             }
         }
+    }
+
+    if (modeloARenombrar != null) {
+        AlertDialog(
+            onDismissRequest = { modeloARenombrar = null },
+            title = { Text("Renombrar Modelo", color = textColor, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = nuevoNombreInput,
+                    onValueChange = { nuevoNombreInput = it },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (nuevoNombreInput.isNotBlank()) {
+                            coroutineScope.launch {
+                                val modeloActualizado = modeloARenombrar!!.copy(nombre = nuevoNombreInput)
+                                escaneoDao.actualizar(modeloActualizado)
+                                cargarDatos()
+                                modeloARenombrar = null
+                            }
+                        }
+                    }
+                ) {
+                    Text("Guardar", color = primaryBlue, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { modeloARenombrar = null }) {
+                    Text("Cancelar", color = secondaryTextColor)
+                }
+            },
+            containerColor = surfaceColor
+        )
     }
 
     Scaffold(
@@ -118,30 +178,75 @@ fun HistorialScreen(
             }
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
+                .padding(innerPadding)
                 .fillMaxSize()
                 .background(Brush.verticalGradient(listOf(surfaceColor, lightBlue.copy(alpha = 0.3f))))
-                .padding(innerPadding)
         ) {
-            if (historyModels.isEmpty()) {
+            OutlinedTextField(
+                value = consultaBusqueda,
+                onValueChange = { consultaBusqueda = it },
+                placeholder = { Text("Buscar por nombre...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = primaryBlue) },
+                trailingIcon = {
+                    if (consultaBusqueda.isNotEmpty()) {
+                        IconButton(onClick = { consultaBusqueda = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = null, tint = secondaryTextColor)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val opciones = listOf("Todos", "Hoy", "Este Mes")
+                opciones.forEach { opcion ->
+                    val activo = filtroFecha == opcion
+                    FilterChip(
+                        selected = activo,
+                        onClick = { filtroFecha = opcion },
+                        label = { Text(opcion) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = primaryBlue,
+                            selectedLabelColor = Color.White,
+                            containerColor = surfaceColor,
+                            labelColor = secondaryTextColor
+                        )
+                    )
+                }
+            }
+
+            if (modelosFiltrados.isEmpty()) {
                 Column(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(Icons.Default.Inbox, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("No hay modelos guardados todavía.", color = Color.Gray, fontWeight = FontWeight.Medium)
+                    Text("No se encontraron modelos guardados.", color = Color.Gray, fontWeight = FontWeight.Medium)
                 }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    items(historyModels) { model ->
+                    items(modelosFiltrados) { model ->
                         ModelCard(
                             model = model,
                             isDarkMode = isDarkMode,
@@ -160,6 +265,10 @@ fun HistorialScreen(
                                     cargarDatos()
                                     Toast.makeText(context, "Modelo eliminado", Toast.LENGTH_SHORT).show()
                                 }
+                            },
+                            onRename = {
+                                modeloARenombrar = model
+                                nuevoNombreInput = model.nombre
                             }
                         )
                     }
@@ -170,10 +279,11 @@ fun HistorialScreen(
 }
 
 @Composable
-fun ModelCard(model: Escaneo3D, isDarkMode: Boolean, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
+fun ModelCard(model: Escaneo3D, isDarkMode: Boolean, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit) {
     val primaryBlue = Color(0xFF0D47A1)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
 
     ElevatedCard(
         modifier = Modifier
@@ -203,14 +313,32 @@ fun ModelCard(model: Escaneo3D, isDarkMode: Boolean, onView: () -> Unit, onExpor
             }
 
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = model.nombre,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = textColor
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = model.nombre,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onRename,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Renombrar",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
                 Text(
                     text = model.fecha,
                     fontSize = 11.sp,

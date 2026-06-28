@@ -1,5 +1,10 @@
 package com.conti.scaner3d.PantallasOperacion
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -40,12 +46,11 @@ fun VisualizarModeloScreen(
     var rotY by remember { mutableFloatStateOf(0f) }
     var autoRotar by remember { mutableStateOf(true) }
     var velocidadRotacion by remember { mutableFloatStateOf(1.0f) }
-    var colorLineas by remember { mutableStateOf(Color.Cyan) }
+    var colorLineas by remember { mutableStateOf(Color(0xFF00E5FF)) }
     var mostrarAjustes by remember { mutableStateOf(false) }
 
     val escala = 400f
-    val primaryBlue = Color(0xFF0D47A1)
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) Color(0xFF151D2A) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
 
     val lineas3D = remember(jsonPath) {
@@ -67,24 +72,12 @@ fun VisualizarModeloScreen(
                 title = {
                     Column {
                         Text("VISUALIZADOR 3D", fontWeight = FontWeight.Black, fontSize = 16.sp, letterSpacing = 1.sp)
-                        Text("Explora el modelo digital", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Explora la nube de puntos digitalizada", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { mostrarAjustes = !mostrarAjustes },
-                        modifier = Modifier.background(if (mostrarAjustes) primaryBlue.copy(alpha = 0.1f) else Color.Transparent, CircleShape)
-                    ) {
-                        Icon(
-                            if (mostrarAjustes) Icons.Default.Close else Icons.Default.Settings,
-                            contentDescription = "Ajustes",
-                            tint = if (mostrarAjustes) primaryBlue else textColor
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -99,14 +92,19 @@ fun VisualizarModeloScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Color(0xFF0A0A0A))
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFF0A111E), Color(0xFF030712)),
+                        center = Offset.Unspecified
+                    )
+                )
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = { autoRotar = false },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            rotY += dragAmount.x * 0.5f
-                            rotX -= dragAmount.y * 0.5f
+                            rotY += dragAmount.x * 0.4f
+                            rotX -= dragAmount.y * 0.4f
                         }
                     )
                 }
@@ -120,7 +118,7 @@ fun VisualizarModeloScreen(
                     val proj2 = proyectar(p2, rotX, rotY, centroX, centroY, escala)
 
                     drawLine(
-                        color = colorLineas.copy(alpha = 0.8f),
+                        color = colorLineas.copy(alpha = 0.7f),
                         start = proj1,
                         end = proj2,
                         strokeWidth = 3f,
@@ -131,86 +129,177 @@ fun VisualizarModeloScreen(
 
             Box(
                 modifier = Modifier
-                    .padding(16.dp)
-                    .align(Alignment.TopEnd)
-                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                    .padding(8.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .border(1.dp, colorLineas.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
                 Text(
-                    "Rotación: ${rotY.toInt()}°",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "X: ${rotX.toInt() % 360}°  •  Y: ${rotY.toInt() % 360}°",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
                 )
             }
 
-            if (mostrarAjustes) {
-                ElevatedCard(
+            AnimatedVisibility(
+                visible = !mostrarAjustes,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor.copy(alpha = 0.95f))
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                        .border(1.dp, colorLineas.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text("AJUSTES DE VISTA", fontWeight = FontWeight.Black, fontSize = 12.sp, color = if (isDarkMode) Color.White else primaryBlue)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        IconButton(onClick = { autoRotar = !autoRotar }) {
+                            Icon(
+                                imageVector = if (autoRotar) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = colorLineas
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                rotX = 0f
+                                rotY = 0f
+                                autoRotar = false
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { mostrarAjustes = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+            AnimatedVisibility(
+                visible = mostrarAjustes,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .fillMaxWidth()
+            ) {
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.92f)),
+                    modifier = Modifier.border(1.dp, colorLineas.copy(alpha = 0.4f), RoundedCornerShape(28.dp)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(22.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "AJUSTES DE VISUALIZACIÓN",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                color = colorLineas,
+                                letterSpacing = 1.sp
+                            )
+                            IconButton(
+                                onClick = { mostrarAjustes = false },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(Color.Gray.copy(alpha = 0.15f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = null,
+                                    tint = textColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.RotateRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Auto-rotar", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), color = textColor)
+                            Text("Giro Automático", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), color = textColor, fontSize = 13.sp)
                             Switch(
                                 checked = autoRotar,
                                 onCheckedChange = { autoRotar = it },
-                                colors = SwitchDefaults.colors(checkedThumbColor = primaryBlue)
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = colorLineas,
+                                    checkedTrackColor = colorLineas.copy(alpha = 0.3f)
+                                )
                             )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Velocidad", fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp), color = textColor)
+                            Text("Velocidad", fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp), color = textColor, fontSize = 13.sp)
                             Slider(
                                 value = velocidadRotacion,
                                 onValueChange = { velocidadRotacion = it },
                                 valueRange = 0.1f..5f,
                                 modifier = Modifier.weight(1f),
-                                colors = SliderDefaults.colors(thumbColor = primaryBlue, activeTrackColor = primaryBlue)
+                                colors = SliderDefaults.colors(
+                                    thumbColor = colorLineas,
+                                    activeTrackColor = colorLineas,
+                                    inactiveTrackColor = Color.Gray.copy(alpha = 0.3f)
+                                )
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        Text("Color del Neón", fontWeight = FontWeight.Medium, color = textColor)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            val colores = listOf(Color.Cyan, Color(0xFF00E676), Color.Yellow, Color(0xFFFF5252), Color.White, Color(0xFFD1C4E9))
-                            colores.forEach { color ->
+                        Text("Color del Holograma", fontWeight = FontWeight.Bold, color = textColor, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            val coloresNeon = listOf(
+                                Color(0xFF00E5FF),
+                                Color(0xFF00E676),
+                                Color(0xFFFFEA00),
+                                Color(0xFFFF1744),
+                                Color(0xFFD500F9),
+                                Color.White
+                            )
+                            coloresNeon.forEach { color ->
+                                val activo = colorLineas == color
                                 Box(
                                     modifier = Modifier
-                                        .size(34.dp)
+                                        .size(36.dp)
                                         .clip(CircleShape)
                                         .background(color)
-                                        .border(if (colorLineas == color) 3.dp else 0.dp, primaryBlue, CircleShape)
+                                        .border(
+                                            width = if (activo) 3.dp else 1.dp,
+                                            color = if (activo) textColor else Color.Transparent,
+                                            shape = CircleShape
+                                        )
                                         .clickable { colorLineas = color }
                                 )
                             }
                         }
                     }
                 }
-            } else {
-                Text(
-                    "Desliza para explorar • Pulsa Ajustes para personalizar",
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp),
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
             }
         }
     }

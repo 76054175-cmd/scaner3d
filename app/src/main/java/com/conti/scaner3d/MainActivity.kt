@@ -97,8 +97,7 @@ class MainActivity : ComponentActivity() {
                             EscanearScreen(
                                 escaneoDao = escaneoDao,
                                 isDarkMode = isDarkMode,
-                                onNavigate = { nuevaPantalla -> pantallaActual = nuevaPantalla }
-                            )
+                            ) { nuevaPantalla -> pantallaActual = nuevaPantalla }
                         }
                         "Historial" -> {
                             HistorialScreen(

@@ -19,14 +19,22 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -35,8 +43,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -74,10 +83,10 @@ fun EscanearScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val primaryBlue = ComposeColor(0xFF0D47A1)
-    val bgColor = if (isDarkMode) ComposeColor(0xFF121212) else ComposeColor(0xFFF5F5F5)
-    val surfaceColor = if (isDarkMode) ComposeColor(0xFF1E1E1E) else ComposeColor.White
-    val textColor = if (isDarkMode) ComposeColor.White else ComposeColor.Black
+    val primaryBlue = Color(0xFF0D47A1)
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
 
     var tienePermisoCamara by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -94,25 +103,25 @@ fun EscanearScreen(
     }
 
     var faseEscaneo by remember { mutableStateOf("CONFIGURACION") }
-    var precisionAngular by remember { mutableIntStateOf(20) }
-    var resolucionSecantes by remember { mutableIntStateOf(100) }
-    var escalaHorizontal by remember { mutableFloatStateOf(1.0f) }
-    var escalaVertical by remember { mutableFloatStateOf(1.0f) }
+    var precisionAngular by remember { mutableStateOf(20) }
+    var resolucionSecantes by remember { mutableStateOf(120) }
+    var escalaHorizontal by remember { mutableStateOf(1.0f) }
+    var escalaVertical by remember { mutableStateOf(1.0f) }
 
     var modoAutomatico by remember { mutableStateOf(false) }
-    var intervaloAutomatico by remember { mutableIntStateOf(3) }
+    var intervaloAutomatico by remember { mutableStateOf(3) }
 
     var colorFondoRef by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
-    var umbralTolerancia by remember { mutableFloatStateOf(60f) }
+    var umbralTolerancia by remember { mutableStateOf(60f) }
 
-    var anguloActual by remember { mutableIntStateOf(0) }
+    var anguloActual by remember { mutableStateOf(0) }
     val muestrasCapturadas = remember { mutableStateListOf<MuestraAngulo>() }
     var procesandoImagen by remember { mutableStateOf(false) }
     var imageCaptureUseCase by remember { mutableStateOf<ImageCapture?>(null) }
 
     var ultimoBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    var cuentaRegresiva by remember { mutableIntStateOf(0) }
+    var cuentaRegresiva by remember { mutableStateOf(0) }
     var estaEnCuentaRegresiva by remember { mutableStateOf(false) }
 
     val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
@@ -160,7 +169,7 @@ fun EscanearScreen(
         containerColor = bgColor,
         topBar = {
             TopAppBar(
-                title = { Text("Escáner 3D Profesional", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                title = { Text("Escáner 3D", fontWeight = FontWeight.Black, fontSize = 20.sp, letterSpacing = 1.sp) },
                 navigationIcon = {
                     if (faseEscaneo != "CONFIGURACION") {
                         IconButton(onClick = {
@@ -199,11 +208,11 @@ fun EscanearScreen(
                             selected = item == "Escanear",
                             onClick = { if (item != "Escanear") onNavigate(item) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = if (isDarkMode) ComposeColor.White else primaryBlue,
-                                selectedTextColor = if (isDarkMode) ComposeColor.White else primaryBlue,
-                                indicatorColor = if (isDarkMode) ComposeColor(0xFF1E3A5F) else ComposeColor(0xFFE3F2FD),
-                                unselectedIconColor = if (isDarkMode) ComposeColor.LightGray else ComposeColor.Gray,
-                                unselectedTextColor = if (isDarkMode) ComposeColor.LightGray else ComposeColor.Gray
+                                selectedIconColor = if (isDarkMode) Color.White else primaryBlue,
+                                selectedTextColor = if (isDarkMode) Color.White else primaryBlue,
+                                indicatorColor = if (isDarkMode) Color(0xFF1E3A5F) else Color(0xFFE3F2FD),
+                                unselectedIconColor = if (isDarkMode) Color.LightGray else Color.Gray,
+                                unselectedTextColor = if (isDarkMode) Color.LightGray else Color.Gray
                             )
                         )
                     }
@@ -211,12 +220,12 @@ fun EscanearScreen(
             }
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            contentAlignment = Alignment.Center
         ) {
             when (faseEscaneo) {
                 "CONFIGURACION" -> {
@@ -345,46 +354,171 @@ fun ConfiguracionInicial(
     intervalo: Int, onIntervaloChange: (Int) -> Unit,
     onStart: () -> Unit
 ) {
-    val surfaceColor = if (isDarkMode) ComposeColor(0xFF1E1E1E) else ComposeColor.White
-    val textColor = if (isDarkMode) ComposeColor.White else ComposeColor.Black
-    val secondaryTextColor = if (isDarkMode) ComposeColor.LightGray else ComposeColor.Gray
-    val primaryBlue = ComposeColor(0xFF0D47A1)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
+    val primaryBlue = Color(0xFF0D47A1)
 
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = surfaceColor), elevation = CardDefaults.cardElevation(4.dp)) {
-        Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
-            Text("Ajustes de Escaneo", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = if (isDarkMode) ComposeColor.White else primaryBlue)
-            Spacer(modifier = Modifier.height(16.dp))
+    var calidadSeleccionada by remember { mutableStateOf("Medio") }
+    var mostrarAjustesAvanzados by remember { mutableStateOf(false) }
 
-            Text("Precisión Angular: $precision°", fontWeight = FontWeight.Medium, color = textColor)
-            Slider(value = precision.toFloat(), onValueChange = { onPrecisionChange(it.toInt()) }, valueRange = 5f..90f, steps = 16)
-
-            Text("Resolución Vertical: $resolucion líneas", fontWeight = FontWeight.Medium, color = textColor)
-            Slider(value = resolucion.toFloat(), onValueChange = { onResolucionChange(it.toInt()) }, valueRange = 20f..300f)
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = secondaryTextColor.copy(alpha = 0.2f))
-
-            Text("Escala Horizontal: ${String.format(Locale.US, "%.2f", eHorizontal)}", fontWeight = FontWeight.Medium, color = textColor)
-            Slider(value = eHorizontal, onValueChange = onEHorizontalChange, valueRange = 0.5f..3.0f)
-
-            Text("Escala Vertical: ${String.format(Locale.US, "%.2f", eVertical)}", fontWeight = FontWeight.Medium, color = textColor)
-            Slider(value = eVertical, onValueChange = onEVerticalChange, valueRange = 0.5f..3.0f)
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = secondaryTextColor.copy(alpha = 0.2f))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Modo Automático", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), color = textColor)
-                Switch(checked = modoAuto, onCheckedChange = onModoAutoChange)
+    LaunchedEffect(calidadSeleccionada) {
+        when (calidadSeleccionada) {
+            "Bajo" -> {
+                onPrecisionChange(30)
+                onResolucionChange(60)
             }
-            if (modoAuto) {
-                Text("Intervalo: $intervalo seg", fontWeight = FontWeight.Medium, color = textColor)
-                Slider(value = intervalo.toFloat(), onValueChange = { onIntervaloChange(it.toInt()) }, valueRange = 2f..10f, steps = 8)
-                Text("Se tomará la foto automáticamente tras el pitido.", fontSize = 11.sp, color = secondaryTextColor)
+            "Medio" -> {
+                onPrecisionChange(18)
+                onResolucionChange(120)
             }
+            "Alto" -> {
+                onPrecisionChange(10)
+                onResolucionChange(200)
+            }
+        }
+    }
 
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = onStart, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)) {
-                Text("Siguiente: Calibrar Fondo", fontSize = 16.sp, color = ComposeColor.White)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "Calidad de Escaneo",
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 16.sp,
+            color = if (isDarkMode) Color.White else primaryBlue
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val calidades = listOf("Bajo", "Medio", "Alto")
+            val descripciones = listOf("12 fotos\nRápido", "20 fotos\nBalanceado", "36 fotos\nDetallado")
+            val iconos = listOf(Icons.Default.Speed, Icons.Default.Balance, Icons.Default.HighQuality)
+
+            calidades.forEachIndexed { index, calidad ->
+                val seleccionado = calidadSeleccionada == calidad
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { calidadSeleccionada = calidad }
+                        .border(
+                            width = if (seleccionado) 3.dp else 1.dp,
+                            color = if (seleccionado) primaryBlue else secondaryTextColor.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(16.dp)
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (seleccionado) primaryBlue.copy(alpha = 0.08f) else surfaceColor
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = iconos[index],
+                            contentDescription = null,
+                            tint = if (seleccionado) primaryBlue else secondaryTextColor,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = calidad,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = descripciones[index],
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 12.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
             }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = surfaceColor)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { mostrarAjustesAvanzados = !mostrarAjustesAvanzados },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Tune, contentDescription = null, tint = primaryBlue)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Ajustes Avanzados",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = textColor
+                        )
+                    }
+                    Icon(
+                        imageVector = if (mostrarAjustesAvanzados) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = secondaryTextColor
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = mostrarAjustesAvanzados,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(top = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Escala Horizontal: ${String.format(Locale.US, "%.2f", eHorizontal)}", fontSize = 12.sp, color = textColor)
+                        Slider(value = eHorizontal, onValueChange = onEHorizontalChange, valueRange = 0.5f..3.0f)
+
+                        Text("Escala Vertical: ${String.format(Locale.US, "%.2f", eVertical)}", fontSize = 12.sp, color = textColor)
+                        Slider(value = eVertical, onValueChange = onEVerticalChange, valueRange = 0.5f..3.0f)
+
+                        HorizontalDivider(color = secondaryTextColor.copy(alpha = 0.15f))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Captura Automática", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), fontSize = 13.sp, color = textColor)
+                            Switch(checked = modoAuto, onCheckedChange = onModoAutoChange)
+                        }
+
+                        if (modoAuto) {
+                            Text("Intervalo: $intervalo seg", fontSize = 12.sp, color = textColor)
+                            Slider(value = intervalo.toFloat(), onValueChange = { onIntervaloChange(it.toInt()) }, valueRange = 2f..10f, steps = 8)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .shadow(12.dp, RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)
+        ) {
+            Text("COMENZAR CALIBRACIÓN", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }
@@ -401,66 +535,197 @@ fun RevisionPipeline(
     onRetake: () -> Unit,
     onConfirm: (MuestraAngulo) -> Unit
 ) {
-    val surfaceColor = if (isDarkMode) ComposeColor(0xFF1E1E1E) else ComposeColor.White
-    val textColor = if (isDarkMode) ComposeColor.White else ComposeColor.Black
-    val primaryBlue = ComposeColor(0xFF0D47A1)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
+    val primaryBlue = Color(0xFF0D47A1)
 
     var viewMode by remember { mutableIntStateOf(2) }
 
-    val result = remember(umbral, resolucion) {
-        procesarPipeline(bitmap, colorFondo, umbral, resolucion, angulo)
+    val scaledBitmap = remember(bitmap) {
+        val maxDim = 250
+        if (bitmap.width > maxDim || bitmap.height > maxDim) {
+            val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+            val (w, h) = if (aspectRatio > 1) {
+                maxDim to (maxDim / aspectRatio).toInt()
+            } else {
+                (maxDim * aspectRatio).toInt() to maxDim
+            }
+            Bitmap.createScaledBitmap(bitmap, w, h, true)
+        } else {
+            bitmap
+        }
     }
 
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = surfaceColor), elevation = CardDefaults.cardElevation(4.dp)) {
-            Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Calibración del Pipeline ($angulo°)", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-                Spacer(modifier = Modifier.height(12.dp))
+    var result by remember { mutableStateOf<PipelineResult?>(null) }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val modes = listOf("Original", "Fondo", "Muestreo")
-                    modes.forEachIndexed { index, name ->
-                        FilterChip(
-                            selected = viewMode == index,
-                            onClick = { viewMode = index },
-                            label = { Text(name, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f)
+    LaunchedEffect(scaledBitmap, umbral, resolucion) {
+        val calculated = withContext(Dispatchers.Default) {
+            procesarPipeline(scaledBitmap, colorFondo, umbral, resolucion, angulo)
+        }
+        result = calculated
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = surfaceColor)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Calibración de Silueta",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = textColor
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = if (isDarkMode) Color.White.copy(alpha = 0.05f) else Color(0xFFF0F0F0),
+                            shape = RoundedCornerShape(12.dp)
                         )
-                    }
-                }
-
-                Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
-                    val displayBitmap = when(viewMode) {
-                        0 -> bitmap
-                        1 -> result.bitmapFondo
-                        else -> result.bitmapContorno
-                    }
-                    Image(bitmap = displayBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-
-                    if (viewMode == 2) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            result.muestra.lineas.forEach { linea ->
-                                val y = linea.yRelativo * size.height
-                                drawLine(ComposeColor.Cyan.copy(alpha = 0.8f), Offset(linea.inicioX * size.width, y), Offset((linea.inicioX + linea.longitud) * size.width, y), 2f)
-                            }
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val modes = listOf("Original", "Aislado", "Silueta")
+                    modes.forEachIndexed { index, name ->
+                        val seleccionado = viewMode == index
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (seleccionado) primaryBlue else Color.Transparent)
+                                .clickable { viewMode = index }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = name,
+                                color = if (seleccionado) Color.White else secondaryTextColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Umbral de Tolerancia: ${umbral.toInt()}", fontWeight = FontWeight.Bold, color = if (isDarkMode) ComposeColor.White else primaryBlue)
-                Slider(value = umbral, onValueChange = onUmbralChange, valueRange = 0f..300f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1.2f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black)
+                        .border(1.dp, secondaryTextColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    result?.let { currentResult ->
+                        val displayBitmap = when (viewMode) {
+                            0 -> scaledBitmap
+                            1 -> currentResult.bitmapFondo
+                            else -> currentResult.bitmapContorno
+                        }
+                        Image(
+                            bitmap = displayBitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Default.Refresh, null, tint = textColor)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Repetir", color = textColor)
+                        if (viewMode == 2) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                currentResult.muestra.lineas.forEach { linea ->
+                                    val y = linea.yRelativo * size.height
+                                    drawLine(
+                                        color = Color.Cyan,
+                                        start = Offset(linea.inicioX * size.width, y),
+                                        end = Offset((linea.inicioX + linea.longitud) * size.width, y),
+                                        strokeWidth = 3f
+                                    )
+                                }
+                            }
+                        }
+                    } ?: CircularProgressIndicator(color = primaryBlue)
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Sensibilidad de Filtro",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = textColor
+                        )
+                        Text(
+                            text = "${umbral.toInt()}",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp,
+                            color = primaryBlue
+                        )
                     }
-                    Button(onClick = { onConfirm(result.muestra) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)) {
-                        Icon(Icons.Default.Check, null, tint = ComposeColor.White)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Confirmar", color = ComposeColor.White)
+                    Text(
+                        text = "Ajusta para aislar el objeto del fondo verde o azul",
+                        fontSize = 11.sp,
+                        color = secondaryTextColor
+                    )
+                    Slider(
+                        value = umbral,
+                        onValueChange = onUmbralChange,
+                        valueRange = 0f..300f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = primaryBlue,
+                            activeTrackColor = primaryBlue,
+                            inactiveTrackColor = secondaryTextColor.copy(alpha = 0.2f)
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onRetake,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Red)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Repetir", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { result?.let { onConfirm(it.muestra) } },
+                        enabled = result != null,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Confirmar", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -470,44 +735,44 @@ fun RevisionPipeline(
 
 @Composable
 fun CapturaPorAngulos(isDarkMode: Boolean, anguloActual: Int, totalFotos: Int, precision: Int, procesando: Boolean, tienePermiso: Boolean, cuentaRegresiva: Int, onCapture: () -> Unit, onCancel: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
-    val surfaceColor = if (isDarkMode) ComposeColor(0xFF1E1E1E) else ComposeColor.White
-    val textColor = if (isDarkMode) ComposeColor.White else ComposeColor.Black
-    val primaryBlue = ComposeColor(0xFF0D47A1)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val primaryBlue = Color(0xFF0D47A1)
 
     val fotoNumero = (anguloActual / precision) + 1
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = surfaceColor), elevation = CardDefaults.cardElevation(4.dp)) {
         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("PASO $fotoNumero DE $totalFotos", fontWeight = FontWeight.ExtraBold, color = if (isDarkMode) ComposeColor.White else primaryBlue, fontSize = 14.sp)
+            Text("PASO $fotoNumero DE $totalFotos", fontWeight = FontWeight.ExtraBold, color = if (isDarkMode) Color.White else primaryBlue, fontSize = 14.sp)
             Text("Gira el objeto a: $anguloActual°", fontSize = 24.sp, fontWeight = FontWeight.Black, color = textColor)
             Spacer(modifier = Modifier.height(16.dp))
 
-            Box(modifier = Modifier.fillMaxWidth().height(350.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
+            Box(modifier = Modifier.fillMaxWidth().height(350.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
                 if (tienePermiso) VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
 
                 if (cuentaRegresiva > 0) {
-                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("ROTAR AHORA", color = ComposeColor.Yellow, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text("$cuentaRegresiva", color = ComposeColor.White, fontSize = 80.sp, fontWeight = FontWeight.Black)
+                            Text("ROTAR AHORA", color = Color.Yellow, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("$cuentaRegresiva", color = Color.White, fontSize = 80.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
 
                 if (procesando) {
-                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = ComposeColor.White)
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
             Button(onClick = onCapture, enabled = !procesando && cuentaRegresiva == 0, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)) {
-                Icon(Icons.Default.PhotoCamera, null, tint = ComposeColor.White)
+                Icon(Icons.Default.PhotoCamera, null, tint = Color.White)
                 Spacer(Modifier.width(8.dp))
-                Text(if (cuentaRegresiva > 0) "ESPERANDO..." else "CAPTURAR", fontWeight = FontWeight.Bold, color = ComposeColor.White)
+                Text(if (cuentaRegresiva > 0) "ESPERANDO..." else "CAPTURAR", fontWeight = FontWeight.Bold, color = Color.White)
             }
             TextButton(onClick = onCancel, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Cancelar Escaneo", color = ComposeColor.Red)
+                Text("Cancelar Escaneo", color = Color.Red)
             }
         }
     }
@@ -536,13 +801,13 @@ fun VistaCamara(modifier: Modifier = Modifier, onImageCaptureReady: (ImageCaptur
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val centerX = size.width / 2
-            drawLine(ComposeColor.Red, Offset(centerX, 0f), Offset(centerX, size.height), 3f)
-            val guideColor = ComposeColor.White.copy(alpha = 0.7f)
+            drawLine(Color.Red, Offset(centerX, 0f), Offset(centerX, size.height), 3f)
+            val guideColor = Color.White.copy(alpha = 0.7f)
             val padding = 60f
             drawLine(guideColor, Offset(centerX - 100, padding), Offset(centerX + 100, padding), 4f)
             drawLine(guideColor, Offset(centerX - 100, size.height - padding), Offset(centerX + 100, size.height - padding), 4f)
         }
-        Text("ALINEA EL EJE CENTRAL", modifier = Modifier.align(Alignment.TopCenter).padding(top = 80.dp).background(ComposeColor.Black.copy(0.5f), RoundedCornerShape(4.dp)).padding(4.dp), color = ComposeColor.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("ALINEA EL EJE CENTRAL", modifier = Modifier.align(Alignment.TopCenter).padding(top = 80.dp).background(Color.Black.copy(0.5f), RoundedCornerShape(4.dp)).padding(4.dp), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -638,28 +903,28 @@ suspend fun guardarResultadoFinal(
 
 @Composable
 fun CalibracionFondo(isDarkMode: Boolean, procesando: Boolean, tienePermiso: Boolean, onCalibrate: () -> Unit, onImageCaptureReady: (ImageCapture) -> Unit) {
-    val surfaceColor = if (isDarkMode) ComposeColor(0xFF1E1E1E) else ComposeColor.White
-    val primaryBlue = ComposeColor(0xFF0D47A1)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val primaryBlue = Color(0xFF0D47A1)
 
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = surfaceColor), elevation = CardDefaults.cardElevation(4.dp)) {
         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("CALIBRACIÓN", fontWeight = FontWeight.ExtraBold, color = if (isDarkMode) ComposeColor.White else primaryBlue)
-            Text("Apunta al fondo vacío sin el objeto", fontSize = 12.sp, color = ComposeColor.Gray)
+            Text("CALIBRACIÓN", fontWeight = FontWeight.ExtraBold, color = if (isDarkMode) Color.White else primaryBlue)
+            Text("Apunta al fondo vacío sin el objeto", fontSize = 12.sp, color = Color.Gray)
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(ComposeColor.Black)) {
+            Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
                 if (tienePermiso) {
                     VistaCamara(modifier = Modifier.fillMaxSize(), onImageCaptureReady = onImageCaptureReady)
-                    Box(modifier = Modifier.size(24.dp).border(3.dp, ComposeColor.White, CircleShape).align(Alignment.Center))
+                    Box(modifier = Modifier.size(24.dp).border(3.dp, Color.White, CircleShape).align(Alignment.Center))
                 }
                 if (procesando) {
-                    Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = ComposeColor.White)
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
                     }
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
             Button(onClick = onCalibrate, enabled = !procesando, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)) {
-                Text("CAPTURAR COLOR FONDO", color = ComposeColor.White)
+                Text("CAPTURAR COLOR FONDO", color = Color.White)
             }
         }
     }
@@ -667,20 +932,20 @@ fun CalibracionFondo(isDarkMode: Boolean, procesando: Boolean, tienePermiso: Boo
 
 @Composable
 fun ResultadoFinal(isDarkMode: Boolean, onReset: () -> Unit, onVerModelo: () -> Unit) {
-    val textColor = if (isDarkMode) ComposeColor.White else ComposeColor(0xFF1976D2)
-    val primaryBlue = ComposeColor(0xFF0D47A1)
+    val textColor = if (isDarkMode) Color.White else Color(0xFF1976D2)
+    val primaryBlue = Color(0xFF0D47A1)
 
     Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Default.CloudDone, null, tint = ComposeColor(0xFF4CAF50), modifier = Modifier.size(120.dp))
+        Icon(Icons.Default.CloudDone, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(120.dp))
         Text("¡PROCESO FINALIZADO!", fontSize = 24.sp, fontWeight = FontWeight.Black, color = textColor)
-        Text("El modelo ha sido exportado a JSON.", textAlign = TextAlign.Center, color = ComposeColor.Gray)
+        Text("El modelo ha sido exportado a JSON.", textAlign = TextAlign.Center, color = Color.Gray)
         Spacer(modifier = Modifier.height(40.dp))
         Button(onClick = onVerModelo, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)) {
-            Text("VER EN HISTORIAL", color = ComposeColor.White)
+            Text("VER EN HISTORIAL", color = Color.White)
         }
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp)) {
-            Text("NUEVO ESCANEO", color = if (isDarkMode) ComposeColor.White else primaryBlue)
+            Text("NUEVO ESCANEO", color = if (isDarkMode) Color.White else primaryBlue)
         }
     }
 }
