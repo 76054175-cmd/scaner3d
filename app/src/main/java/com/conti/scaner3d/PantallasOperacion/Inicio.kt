@@ -40,29 +40,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import com.conti.scaner3d.baseDatosLocal.UsuarioDao
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InicioScreen(
     usuario: String = "Usuario",
     correo: String = "usuario@conti.com",
-    profileImageUri: Uri? = null,
+    usuarioDao: UsuarioDao,
+    isDarkMode: Boolean,
+    onThemeChange: (Boolean) -> Unit,
     onNavigate: (String) -> Unit = {},
-    onNavigateToLogin: () -> Unit
+    onNavigateToLogin: () -> Unit,
+    onUsuarioActualizado: (String) -> Unit
 ) {
     var showProfileSheet by remember { mutableStateOf(false) }
     var isEditingProfile by remember { mutableStateOf(false) }
-    var isDarkTheme by remember { mutableStateOf(false) }
 
     var displayUsuario by remember { mutableStateOf(usuario) }
     var displayCorreo by remember { mutableStateOf(correo) }
-    var displayImageUri by remember { mutableStateOf(profileImageUri) }
+    var displayImageUri by remember { mutableStateOf<Uri?>(null) }
     var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     var tempUsuario by remember { mutableStateOf(displayUsuario) }
     var tempCorreo by remember { mutableStateOf(displayCorreo) }
     var tempPassword by remember { mutableStateOf("") }
-    var tempImageUri by remember { mutableStateOf(displayImageUri) }
+    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
     var tempBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -72,16 +75,31 @@ fun InicioScreen(
 
     val primaryBlue = Color(0xFF0D47A1)
     val secondaryBlue = Color(0xFF1976D2)
-    val lightBlue = if (isDarkTheme) Color(0xFF1E3A5F) else Color(0xFFE3F2FD)
-    val bgColor = if (isDarkTheme) Color(0xFF121212) else Color.White
-    val surfaceColor = if (isDarkTheme) Color(0xFF1E1E1E) else Color.White
-    val textColor = if (isDarkTheme) Color.White else Color.Black
-    val secondaryTextColor = if (isDarkTheme) Color.LightGray else Color.Gray
+    val lightBlue = if (isDarkMode) Color(0xFF1E3A5F) else Color(0xFFE3F2FD)
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color.White
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri -> if (uri != null) tempImageUri = uri }
     )
+
+    LaunchedEffect(usuario) {
+        val userDb = usuarioDao.obtenerUsuarioPorNombre(usuario)
+        if (userDb != null) {
+            displayUsuario = userDb.usuario
+            tempUsuario = userDb.usuario
+            if (userDb.fotoUri != null) {
+                try {
+                    val uri = Uri.parse(userDb.fotoUri)
+                    displayImageUri = uri
+                    tempImageUri = uri
+                } catch (e: Exception) { }
+            }
+        }
+    }
 
     LaunchedEffect(showProfileSheet) {
         if (!showProfileSheet) {
@@ -130,7 +148,7 @@ fun InicioScreen(
                         "SCANNER 3D",
                         fontWeight = FontWeight.Black,
                         letterSpacing = 2.sp,
-                        color = if (isDarkTheme) Color.White else primaryBlue
+                        color = if (isDarkMode) Color.White else primaryBlue
                     )
                 },
                 actions = {
@@ -153,7 +171,7 @@ fun InicioScreen(
                             Icon(
                                 Icons.Default.Person,
                                 contentDescription = null,
-                                tint = if (isDarkTheme) Color.White else primaryBlue
+                                tint = if (isDarkMode) Color.White else primaryBlue
                             )
                         }
                     }
@@ -177,8 +195,8 @@ fun InicioScreen(
                         selected = item == "Inicio",
                         onClick = { if (item != "Inicio") onNavigate(item) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (isDarkTheme) Color.White else primaryBlue,
-                            selectedTextColor = if (isDarkTheme) Color.White else primaryBlue,
+                            selectedIconColor = if (isDarkMode) Color.White else primaryBlue,
+                            selectedTextColor = if (isDarkMode) Color.White else primaryBlue,
                             indicatorColor = lightBlue,
                             unselectedIconColor = secondaryTextColor,
                             unselectedTextColor = secondaryTextColor
@@ -225,7 +243,7 @@ fun InicioScreen(
                                 imageVector = Icons.Default.ViewInAr,
                                 contentDescription = null,
                                 modifier = Modifier.size(40.dp),
-                                tint = if (isDarkTheme) Color.White else primaryBlue
+                                tint = if (isDarkMode) Color.White else primaryBlue
                             )
                         }
 
@@ -275,7 +293,7 @@ fun InicioScreen(
                         modifier = Modifier.weight(1f).height(100.dp),
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.outlinedCardColors(containerColor = surfaceColor),
-                        border = BorderStroke(1.dp, if (isDarkTheme) Color.DarkGray else Color.LightGray)
+                        border = BorderStroke(1.dp, if (isDarkMode) Color.DarkGray else Color.LightGray)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxSize(),
@@ -292,7 +310,7 @@ fun InicioScreen(
                         modifier = Modifier.weight(1f).height(100.dp),
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.outlinedCardColors(containerColor = surfaceColor),
-                        border = BorderStroke(1.dp, if (isDarkTheme) Color.DarkGray else Color.LightGray)
+                        border = BorderStroke(1.dp, if (isDarkMode) Color.DarkGray else Color.LightGray)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxSize(),
@@ -381,7 +399,7 @@ fun InicioScreen(
                                 imageVector = Icons.Default.Person,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
-                                tint = if (isDarkTheme) Color.White else primaryBlue
+                                tint = if (isDarkMode) Color.White else primaryBlue
                             )
                         }
                         Box(
@@ -468,10 +486,31 @@ fun InicioScreen(
 
                     Button(
                         onClick = {
-                            displayUsuario = tempUsuario
-                            displayCorreo = tempCorreo
-                            displayImageUri = tempImageUri
-                            isEditingProfile = false
+                            coroutineScope.launch {
+                                try {
+                                    val user = usuarioDao.obtenerUsuarioPorNombre(displayUsuario)
+                                    if (user != null) {
+                                        val newPass = if (tempPassword.isNotEmpty()) tempPassword else user.contrasena
+                                        val updatedUser = user.copy(
+                                            usuario = tempUsuario,
+                                            contrasena = newPass,
+                                            fotoUri = tempImageUri?.toString()
+                                        )
+                                        usuarioDao.actualizarUsuario(updatedUser)
+                                    }
+                                    displayUsuario = tempUsuario
+                                    displayCorreo = tempCorreo
+                                    displayImageUri = tempImageUri
+                                    isEditingProfile = false
+                                    onUsuarioActualizado(tempUsuario)
+                                } catch (e: Exception) {
+                                    displayUsuario = tempUsuario
+                                    displayCorreo = tempCorreo
+                                    displayImageUri = tempImageUri
+                                    isEditingProfile = false
+                                    onUsuarioActualizado(tempUsuario)
+                                }
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -536,7 +575,7 @@ fun InicioScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = if (isDarkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                imageVector = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
                                 contentDescription = null,
                                 tint = textColor
                             )
@@ -544,8 +583,8 @@ fun InicioScreen(
                             Text("Modo Oscuro", color = textColor, fontWeight = FontWeight.Medium)
                         }
                         Switch(
-                            checked = isDarkTheme,
-                            onCheckedChange = { isDarkTheme = it },
+                            checked = isDarkMode,
+                            onCheckedChange = { onThemeChange(it) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = primaryBlue,
                                 checkedTrackColor = lightBlue
@@ -563,8 +602,8 @@ fun InicioScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isDarkTheme) Color.White else primaryBlue),
-                        border = BorderStroke(1.dp, if (isDarkTheme) Color.White else primaryBlue)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isDarkMode) Color.White else primaryBlue),
+                        border = BorderStroke(1.dp, if (isDarkMode) Color.White else primaryBlue)
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))

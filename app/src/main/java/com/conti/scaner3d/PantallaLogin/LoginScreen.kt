@@ -44,6 +44,7 @@ import kotlinx.coroutines.tasks.await
 @Composable
 fun LoginScreen(
     usuarioDao: UsuarioDao,
+    isDarkMode: Boolean,
     onLoginSuccess: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -51,12 +52,14 @@ fun LoginScreen(
     val focusManager = LocalFocusManager.current
     val auth = remember { FirebaseAuth.getInstance() }
 
-    // Colores modernos
     val primaryBlue = Color(0xFF0D47A1)
     val secondaryBlue = Color(0xFF1976D2)
-    val lightBlue = Color(0xFFE3F2FD)
+    val lightBlue = if (isDarkMode) Color(0xFF1E3A5F) else Color(0xFFE3F2FD)
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color.White
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
 
-    // Google Sign-In options
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(context.getString(R.string.default_web_client_id))
@@ -103,19 +106,22 @@ fun LoginScreen(
                 }
             },
             title = { Text("Atención", fontWeight = FontWeight.Bold) },
-            text = { Text(mensajeAlertaError) }
+            text = { Text(mensajeAlertaError) },
+            containerColor = surfaceColor,
+            titleContentColor = textColor,
+            textContentColor = textColor
         )
     }
 
     Scaffold(
-        containerColor = Color.White
+        containerColor = bgColor
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(Color.White, lightBlue)
+                        colors = listOf(bgColor, lightBlue)
                     )
                 )
                 .padding(innerPadding)
@@ -128,7 +134,6 @@ fun LoginScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Logo o Icono
                 Box(
                     modifier = Modifier
                         .size(100.dp)
@@ -140,7 +145,7 @@ fun LoginScreen(
                     Icon(
                         imageVector = Icons.Default.ViewInAr,
                         contentDescription = null,
-                        tint = primaryBlue,
+                        tint = if (isDarkMode) Color.White else primaryBlue,
                         modifier = Modifier.size(60.dp)
                     )
                 }
@@ -151,13 +156,13 @@ fun LoginScreen(
                     text = if (esModoRegistro) "Crea tu cuenta" else "Bienvenido",
                     fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = primaryBlue
+                    color = textColor
                 )
 
                 Text(
                     text = if (esModoRegistro) "Únete a la revolución del escaneo 3D" else "Ingresa tus datos para continuar",
                     fontSize = 15.sp,
-                    color = Color.DarkGray,
+                    color = secondaryTextColor,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp, bottom = 40.dp)
                 )
@@ -165,7 +170,7 @@ fun LoginScreen(
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+                    colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor),
                     elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -182,7 +187,11 @@ fun LoginScreen(
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = primaryBlue,
-                                focusedLabelColor = primaryBlue
+                                focusedLabelColor = primaryBlue,
+                                unfocusedBorderColor = secondaryTextColor,
+                                unfocusedLabelColor = secondaryTextColor,
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor
                             )
                         )
 
@@ -198,7 +207,7 @@ fun LoginScreen(
                                     Icon(
                                         imageVector = if (contrasenaVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                         contentDescription = null,
-                                        tint = Color.Gray
+                                        tint = secondaryTextColor
                                     )
                                 }
                             },
@@ -208,7 +217,11 @@ fun LoginScreen(
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = primaryBlue,
-                                focusedLabelColor = primaryBlue
+                                focusedLabelColor = primaryBlue,
+                                unfocusedBorderColor = secondaryTextColor,
+                                unfocusedLabelColor = secondaryTextColor,
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor
                             )
                         )
 
@@ -224,7 +237,7 @@ fun LoginScreen(
                                         Icon(
                                             imageVector = if (confirmarContrasenaVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                             contentDescription = null,
-                                            tint = Color.Gray
+                                            tint = secondaryTextColor
                                         )
                                     }
                                 },
@@ -234,7 +247,11 @@ fun LoginScreen(
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = primaryBlue,
-                                    focusedLabelColor = primaryBlue
+                                    focusedLabelColor = primaryBlue,
+                                    unfocusedBorderColor = secondaryTextColor,
+                                    unfocusedLabelColor = secondaryTextColor,
+                                    focusedTextColor = textColor,
+                                    unfocusedTextColor = textColor
                                 )
                             )
                         }
@@ -301,9 +318,9 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray)
-                    Text(" O ", modifier = Modifier.padding(horizontal = 16.dp), color = Color.Gray, fontSize = 12.sp)
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = Color.LightGray)
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = secondaryTextColor)
+                    Text(" O ", modifier = Modifier.padding(horizontal = 16.dp), color = secondaryTextColor, fontSize = 12.sp)
+                    HorizontalDivider(modifier = Modifier.weight(1f), color = secondaryTextColor)
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
@@ -314,8 +331,8 @@ fun LoginScreen(
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color.LightGray),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+                    border = BorderStroke(1.dp, secondaryTextColor),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = textColor)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -345,12 +362,12 @@ fun LoginScreen(
                 ) {
                     Text(
                         text = if (esModoRegistro) "¿Ya tienes cuenta? Inicia Sesión" else "¿No tienes cuenta? Regístrate aquí",
-                        color = primaryBlue,
+                        color = if (isDarkMode) Color.White else primaryBlue,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }

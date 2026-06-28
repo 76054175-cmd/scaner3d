@@ -45,17 +45,19 @@ import java.util.Locale
 @Composable
 fun HistorialScreen(
     escaneoDao: EscaneoDao,
+    isDarkMode: Boolean,
     onNavigate: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var historyModels by remember { mutableStateOf(listOf<Escaneo3D>()) }
 
-    // Colores consistentes
     val primaryBlue = Color(0xFF0D47A1)
-    val lightBlue = Color(0xFFE3F2FD)
+    val lightBlue = if (isDarkMode) Color(0xFF1E3A5F) else Color(0xFFE3F2FD)
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color.White
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
 
-    // Función para recargar
     val cargarDatos = {
         coroutineScope.launch {
             historyModels = escaneoDao.obtenerTodos()
@@ -64,7 +66,6 @@ fun HistorialScreen(
 
     LaunchedEffect(Unit) { cargarDatos() }
 
-    // Launcher para IMPORTAR (.conti)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
@@ -80,19 +81,23 @@ fun HistorialScreen(
     }
 
     Scaffold(
+        containerColor = bgColor,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("MIS MODELOS 3D", fontWeight = FontWeight.Black, letterSpacing = 1.sp) },
                 actions = {
                     IconButton(onClick = { importLauncher.launch("*/*") }) {
-                        Icon(Icons.Default.FileUpload, contentDescription = "Importar .conti", tint = primaryBlue)
+                        Icon(Icons.Default.FileUpload, contentDescription = "Importar .conti", tint = if (isDarkMode) Color.White else primaryBlue)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = surfaceColor,
+                    titleContentColor = textColor
+                )
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
+            NavigationBar(containerColor = surfaceColor, tonalElevation = 8.dp) {
                 val items = listOf("Inicio", "Escanear", "Historial")
                 val icons = listOf(Icons.Default.Home, Icons.Default.PhotoCamera, Icons.Default.History)
                 items.forEach { item ->
@@ -102,8 +107,11 @@ fun HistorialScreen(
                         selected = item == "Historial",
                         onClick = { if (item != "Historial") onNavigate(item) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = primaryBlue,
-                            indicatorColor = lightBlue
+                            selectedIconColor = if (isDarkMode) Color.White else primaryBlue,
+                            selectedTextColor = if (isDarkMode) Color.White else primaryBlue,
+                            indicatorColor = lightBlue,
+                            unselectedIconColor = if (isDarkMode) Color.LightGray else Color.Gray,
+                            unselectedTextColor = if (isDarkMode) Color.LightGray else Color.Gray
                         )
                     )
                 }
@@ -113,7 +121,7 @@ fun HistorialScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color.White, lightBlue.copy(alpha = 0.3f))))
+                .background(Brush.verticalGradient(listOf(surfaceColor, lightBlue.copy(alpha = 0.3f))))
                 .padding(innerPadding)
         ) {
             if (historyModels.isEmpty()) {
@@ -136,6 +144,7 @@ fun HistorialScreen(
                     items(historyModels) { model ->
                         ModelCard(
                             model = model,
+                            isDarkMode = isDarkMode,
                             onView = { onNavigate("VisualizarModelo/${model.imagenUri}") },
                             onExport = {
                                 coroutineScope.launch {
@@ -161,15 +170,17 @@ fun HistorialScreen(
 }
 
 @Composable
-fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
+fun ModelCard(model: Escaneo3D, isDarkMode: Boolean, onView: () -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
     val primaryBlue = Color(0xFF0D47A1)
-    
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(4.dp, RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = Color.White)
+        colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor)
     ) {
         Column(modifier = Modifier.clickable { onView() }) {
             Box(
@@ -187,10 +198,10 @@ fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDele
                     imageVector = Icons.Default.ViewInAr,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = primaryBlue
+                    tint = if (isDarkMode) Color.White else primaryBlue
                 )
             }
-            
+
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
                     text = model.nombre,
@@ -198,7 +209,7 @@ fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDele
                     fontSize = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = Color.Black
+                    color = textColor
                 )
                 Text(
                     text = model.fecha,
@@ -206,9 +217,9 @@ fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDele
                     color = Color.Gray,
                     fontWeight = FontWeight.Medium
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -216,15 +227,15 @@ fun ModelCard(model: Escaneo3D, onView: () -> Unit, onExport: () -> Unit, onDele
                 ) {
                     IconButton(
                         onClick = onExport,
-                        modifier = Modifier.size(32.dp).background(Color(0xFFE8F5E9), CircleShape)
+                        modifier = Modifier.size(32.dp).background(Color(0xFFE8F5E9).copy(alpha = if (isDarkMode) 0.1f else 1f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = "Compartir", tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Share, contentDescription = "Compartir", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
                     }
                     IconButton(
                         onClick = onDelete,
-                        modifier = Modifier.size(32.dp).background(Color(0xFFFFEBEE), CircleShape)
+                        modifier = Modifier.size(32.dp).background(Color(0xFFFFEBEE).copy(alpha = if (isDarkMode) 0.1f else 1f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFEF5350), modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -236,14 +247,14 @@ suspend fun exportarArchivoConti(context: Context, model: Escaneo3D): File? = wi
     try {
         val originalFile = File(model.imagenUri)
         if (!originalFile.exists()) return@withContext null
-        
+
         val exportName = model.nombre.replace(" ", "_") + ".conti"
         val exportsDir = File(context.getExternalFilesDir(null), "Exports")
         if (!exportsDir.exists()) exportsDir.mkdirs()
-        
+
         val exportFile = File(exportsDir, exportName)
         originalFile.copyTo(exportFile, overwrite = true)
-        
+
         withContext(Dispatchers.Main) {
             Toast.makeText(context, "Preparado para compartir: ${exportFile.name}", Toast.LENGTH_SHORT).show()
         }
@@ -277,11 +288,11 @@ suspend fun importarArchivoConti(context: Context, uri: Uri, dao: EscaneoDao): B
         val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext false
         val fileName = "imported_${System.currentTimeMillis()}.json"
         val destFile = File(context.filesDir, fileName)
-        
+
         FileOutputStream(destFile).use { output ->
             inputStream.copyTo(output)
         }
-        
+
         val fecha = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
         dao.insertar(Escaneo3D(nombre = "Importado .conti", fecha = fecha, imagenUri = destFile.absolutePath))
         true
