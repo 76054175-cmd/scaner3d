@@ -29,7 +29,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.conti.scaner3d.R
 import com.conti.scaner3d.baseDatosLocal.Usuario
 import com.conti.scaner3d.baseDatosLocal.UsuarioDao
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -60,9 +59,11 @@ fun LoginScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val secondaryTextColor = if (isDarkMode) Color.LightGray else Color.Gray
 
+    val webClientId = "488409997292-kuno3rfa5kilbu9hce4o6m32tkfhgsm9.apps.googleusercontent.com"
+
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(context.getString(R.string.default_web_client_id))
+            .requestIdToken(webClientId)
             .requestEmail()
             .build()
     }
@@ -327,7 +328,12 @@ fun LoginScreen(
 
                 OutlinedButton(
                     onClick = {
-                        launcher.launch(googleSignInClient.signInIntent)
+                        coroutineScope.launch {
+                            try {
+                                googleSignInClient.signOut().await()
+                            } catch (e: Exception) { }
+                            launcher.launch(googleSignInClient.signInIntent)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
@@ -336,7 +342,7 @@ fun LoginScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_google_logo),
+                            painter = painterResource(id = com.conti.scaner3d.R.drawable.ic_google_logo),
                             contentDescription = "Google Logo",
                             modifier = Modifier.size(24.dp),
                             tint = Color.Unspecified
