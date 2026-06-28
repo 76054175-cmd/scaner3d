@@ -11,11 +11,12 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import com.conti.scaner3d.baseDatosLocal.AppDatabase
 import com.conti.scaner3d.baseDatosLocal.Usuario
@@ -23,7 +24,6 @@ import com.conti.scaner3d.PantallaLogin.LoginScreen
 import com.conti.scaner3d.PantallasOperacion.InicioScreen
 import com.conti.scaner3d.PantallasOperacion.EscanearScreen
 import com.conti.scaner3d.PantallasOperacion.HistorialScreen
-import com.conti.scaner3d.PantallasOperacion.PerfilScreen
 import com.conti.scaner3d.PantallasOperacion.VisualizarModeloScreen
 
 class MainActivity : ComponentActivity() {
@@ -48,12 +48,12 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            var pantallaActual by remember { mutableStateOf("login") }
-            var usuarioLogueado by remember { mutableStateOf("") }
-            var jsonPathAVisualizar by remember { mutableStateOf("") }
+            var pantallaActual by rememberSaveable { mutableStateOf("login") }
+            var usuarioLogueado by rememberSaveable { mutableStateOf("") }
+            var jsonPathAVisualizar by rememberSaveable { mutableStateOf("") }
 
             val systemTheme = isSystemInDarkTheme()
-            var userThemePreference by remember { mutableStateOf<Boolean?>(null) }
+            var userThemePreference by rememberSaveable { mutableStateOf<Boolean?>(null) }
             val isDarkMode = userThemePreference ?: systemTheme
 
             val colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
                             LoginScreen(
                                 usuarioDao = usuarioDao,
                                 isDarkMode = isDarkMode,
-                                onLoginSuccess = { nombreUsuario: String ->
+                                onLoginSuccess = { nombreUsuario ->
                                     usuarioLogueado = nombreUsuario
                                     pantallaActual = "Inicio"
                                 }
@@ -82,6 +82,9 @@ class MainActivity : ComponentActivity() {
                                 onThemeChange = { nuevoEstado -> userThemePreference = nuevoEstado },
                                 onNavigate = { nuevaPantalla -> pantallaActual = nuevaPantalla },
                                 onNavigateToLogin = {
+                                    try {
+                                        FirebaseAuth.getInstance().signOut()
+                                    } catch (e: Exception) { }
                                     usuarioLogueado = ""
                                     pantallaActual = "login"
                                 },
@@ -93,15 +96,15 @@ class MainActivity : ComponentActivity() {
                         "Escanear" -> {
                             EscanearScreen(
                                 escaneoDao = escaneoDao,
-                                isDarkMode = isDarkMode, // <--- AÑADIR ESTO
-                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla }
+                                isDarkMode = isDarkMode,
+                                onNavigate = { nuevaPantalla -> pantallaActual = nuevaPantalla }
                             )
                         }
                         "Historial" -> {
                             HistorialScreen(
                                 escaneoDao = escaneoDao,
-                                isDarkMode = isDarkMode, // <--- AÑADIR ESTO
-                                onNavigate = { nuevaPantalla: String ->
+                                isDarkMode = isDarkMode,
+                                onNavigate = { nuevaPantalla ->
                                     if (nuevaPantalla.startsWith("VisualizarModelo/")) {
                                         jsonPathAVisualizar = nuevaPantalla.removePrefix("VisualizarModelo/")
                                         pantallaActual = "VisualizarModelo"
@@ -114,24 +117,8 @@ class MainActivity : ComponentActivity() {
                         "VisualizarModelo" -> {
                             VisualizarModeloScreen(
                                 jsonPath = jsonPathAVisualizar,
-                                isDarkMode = isDarkMode, // <--- AÑADIR ESTO
+                                isDarkMode = isDarkMode,
                                 onBack = { pantallaActual = "Historial" }
-                            )
-                        }
-                        "Perfil" -> {
-                            PerfilScreen(
-                                usuarioLogueado = usuarioLogueado,
-                                usuarioDao = usuarioDao,
-                                isDarkMode = isDarkMode, // <--- AÑADIR ESTO
-                                onThemeChange = { nuevoEstado: Boolean -> userThemePreference = nuevoEstado },
-                                onCerrarSesion = {
-                                    usuarioLogueado = ""
-                                    pantallaActual = "login"
-                                },
-                                onNavigate = { nuevaPantalla: String -> pantallaActual = nuevaPantalla },
-                                onUsuarioActualizado = { nuevoNombre: String ->
-                                    usuarioLogueado = nuevoNombre
-                                }
                             )
                         }
                     }
